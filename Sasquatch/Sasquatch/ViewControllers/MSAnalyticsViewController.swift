@@ -74,57 +74,61 @@ class MSAnalyticsViewController: UITableViewController, AppCenterProtocol {
     self.edgesForExtendedLayout = []
   }
 
+  fileprivate func eventThingy(_ eventProperties: Any?, _ name: String) {
+    if let properties = eventProperties as? MSEventProperties {
+      
+      // The AppCenterDelegate uses the argument label "withTypedProperties", but the underlying swift API simply uses "withProperties".
+      if priority != .Default {
+        appCenter.trackEvent(name, withTypedProperties: properties, flags: priority.flags)
+      } else {
+        appCenter.trackEvent(name, withTypedProperties: properties)
+      }
+    } else if let dictionary = eventProperties as? [String: String] {
+      if priority != .Default {
+        appCenter.trackEvent(name, withProperties: dictionary, flags: priority.flags)
+      } else {
+        appCenter.trackEvent(name, withProperties: dictionary)
+      }
+    } else {
+      if priority != .Default {
+        appCenter.trackEvent(name, withTypedProperties: nil, flags: priority.flags)
+      } else {
+        appCenter.trackEvent(name)
+      }
+    }
+    for targetToken in MSTransmissionTargets.shared.transmissionTargets.keys {
+      if MSTransmissionTargets.shared.targetShouldSendAnalyticsEvents(targetToken: targetToken) {
+        let target = MSTransmissionTargets.shared.transmissionTargets[targetToken]!
+        if let properties = eventProperties as? MSEventProperties {
+          if priority != .Default {
+            target.trackEvent(name, withProperties: properties, flags: priority.flags)
+          } else {
+            target.trackEvent(name, withProperties: properties)
+          }
+        } else if let dictionary = eventProperties as? [String: String] {
+          if priority != .Default {
+            target.trackEvent(name, withProperties: dictionary, flags: priority.flags)
+          } else {
+            target.trackEvent(name, withProperties: dictionary)
+          }
+        } else {
+          if priority != .Default {
+            target.trackEvent(name, withProperties: [:], flags: priority.flags)
+          } else {
+            target.trackEvent(name)
+          }
+        }
+      }
+    }
+  }
+  
   @IBAction func trackEvent() {
     guard let name = eventName.text else {
       return
     }
     let eventProperties = eventPropertiesSection.eventProperties()
-    for _ in 0..<Int(countSlider.value) {
-      if let properties = eventProperties as? MSEventProperties {
-
-        // The AppCenterDelegate uses the argument label "withTypedProperties", but the underlying swift API simply uses "withProperties".
-        if priority != .Default {
-          appCenter.trackEvent(name, withTypedProperties: properties, flags: priority.flags)
-        } else {
-          appCenter.trackEvent(name, withTypedProperties: properties)
-        }
-      } else if let dictionary = eventProperties as? [String: String] {
-        if priority != .Default {
-          appCenter.trackEvent(name, withProperties: dictionary, flags: priority.flags)
-        } else {
-          appCenter.trackEvent(name, withProperties: dictionary)
-        }
-      } else {
-        if priority != .Default {
-          appCenter.trackEvent(name, withTypedProperties: nil, flags: priority.flags)
-        } else {
-          appCenter.trackEvent(name)
-        }
-      }
-      for targetToken in MSTransmissionTargets.shared.transmissionTargets.keys {
-        if MSTransmissionTargets.shared.targetShouldSendAnalyticsEvents(targetToken: targetToken) {
-          let target = MSTransmissionTargets.shared.transmissionTargets[targetToken]!
-          if let properties = eventProperties as? MSEventProperties {
-            if priority != .Default {
-              target.trackEvent(name, withProperties: properties, flags: priority.flags)
-            } else {
-              target.trackEvent(name, withProperties: properties)
-            }
-          } else if let dictionary = eventProperties as? [String: String] {
-            if priority != .Default {
-              target.trackEvent(name, withProperties: dictionary, flags: priority.flags)
-            } else {
-              target.trackEvent(name, withProperties: dictionary)
-            }
-          } else {
-            if priority != .Default {
-              target.trackEvent(name, withProperties: [:], flags: priority.flags)
-            } else {
-              target.trackEvent(name)
-            }
-          }
-        }
-      }
+    DispatchQueue.concurrentPerform(iterations: 1000000) { (i) in
+      eventThingy(eventProperties, name)
     }
   }
 
