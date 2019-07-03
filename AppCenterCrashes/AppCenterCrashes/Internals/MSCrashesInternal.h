@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSCrashes.h"
 #import "MSServiceInternal.h"
 
@@ -11,7 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * A flag that indicates whether automatic processing is enabled.
  */
-@property(nonatomic) BOOL automaticProcessing;
+@property(nonatomic, getter=isAutomaticProcessingEnabled) BOOL automaticProcessingEnabled;
 
 /**
  * Gets a list of unprocessed crash reports. Will block until the service starts.

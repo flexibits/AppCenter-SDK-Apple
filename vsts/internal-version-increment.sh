@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
 help() {
   echo "Usage: $0 -a <azure-storage-account> -k <azure-storage-access-key>"
 }
@@ -44,10 +47,9 @@ if [[ "$version" == $publish_version-* ]]; then
   build_number="$(echo $version | awk -F "[-]" '{print $2}')"
   build_number=$(($build_number + 1))
 fi
-
 publish_version=$publish_version-$build_number
 echo "New version:" $publish_version
-echo "##vso[task.setvariable variable=SDK_PUBLISH_VERSION]$publish_version"
+echo $publish_version > $CURRENT_BUILD_VERSION_FILENAME
 
 ## III. Update version file
 echo {\"version\":\"$publish_version\"} > $AZURE_APPLE_VERSION_FILE

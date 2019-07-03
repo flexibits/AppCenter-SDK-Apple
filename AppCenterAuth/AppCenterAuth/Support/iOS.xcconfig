@@ -1,0 +1,3 @@
+#include "../../../Config/iOS.xcconfig"
+
+USER_HEADER_SEARCH_PATHS=$(inherited) $(SRCROOT)/MSAL/**

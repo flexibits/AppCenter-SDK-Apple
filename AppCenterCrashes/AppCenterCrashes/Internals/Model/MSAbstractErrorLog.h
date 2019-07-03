@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "AppCenter+Internal.h"
@@ -45,7 +48,7 @@
 /**
  * If YES, this error report is an application crash.
  */
-@property(nonatomic) BOOL fatal;
+@property(nonatomic, getter=isFatal) BOOL fatal;
 
 /**
  * Timestamp when the app was launched.

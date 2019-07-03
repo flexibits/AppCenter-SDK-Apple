@@ -1,5 +1,9 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "AppCenterDelegateObjC.h"
 #import "MSEventFilter.h"
+#import "Constants.h"
 
 @import AppCenter;
 @import AppCenterAnalytics;
@@ -21,8 +25,16 @@
   return [MSAppCenter setEnabled:isEnabled];
 }
 
+- (void)setCountryCode:(NSString *)countryCode {
+  return [MSAppCenter setCountryCode:countryCode];
+}
+
 - (void)setCustomProperties:(MSCustomProperties *)customProperties {
   [MSAppCenter setCustomProperties:customProperties];
+}
+
+- (void)startAnalyticsFromLibrary {
+  [MSAppCenter startFromLibraryWithServices:@ [[MSAnalytics class]]];
 }
 
 - (NSString *)installId {
@@ -30,17 +42,7 @@
 }
 
 - (NSString *)appSecret {
-
-  // TODO: Uncomment when appSecret is moved from internal to public
-  // return [[MSAppCenter sharedInstance] appSecret];
-  return @"Internal";
-}
-
-- (NSString *)logUrl {
-
-  // TODO: Uncomment when logUrl is moved from internal to public
-  // return [[MSAppCenter sharedInstance] logUrl];
-  return @"Internal";
+  return kMSObjcAppSecret;
 }
 
 - (BOOL)isDebuggerAttached {
@@ -49,6 +51,10 @@
 
 - (void)setUserId:(NSString *)userId {
   [MSAppCenter setUserId:userId];
+}
+
+- (void)setLogUrl:(NSString *)logUrl {
+  [MSAppCenter setLogUrl:logUrl];
 }
 
 #pragma mark - Modules section.
@@ -87,6 +93,18 @@
   [MSAnalytics trackEvent:eventName withProperties:properties];
 }
 
+- (void)trackEvent:(NSString *)eventName withProperties:(NSDictionary<NSString *, NSString *> *)properties flags:(MSFlags)flags {
+  [MSAnalytics trackEvent:eventName withProperties:properties flags:flags];
+}
+
+- (void)trackEvent:(NSString *)eventName withTypedProperties:(MSEventProperties *)properties {
+  [MSAnalytics trackEvent:eventName withTypedProperties:properties];
+}
+
+- (void)trackEvent:(NSString *)eventName withTypedProperties:(MSEventProperties *)properties flags:(MSFlags)flags {
+  [MSAnalytics trackEvent:eventName withTypedProperties:properties flags:flags];
+}
+
 - (void)trackPage:(NSString *)pageName {
 
   // TODO: Uncomment when trackPage is moved from internal to public module
@@ -97,6 +115,14 @@
 
   // TODO: Uncomment when trackPage is moved from internal to public module
   // [MSAnalytics trackPage:pageName withProperties:properties];
+}
+
+- (void)resume {
+  [MSAnalytics resume];
+}
+
+- (void)pause {
+  [MSAnalytics pause];
 }
 
 #pragma mark - MSCrashes section.

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSUtility.h"
@@ -68,6 +71,19 @@ extern NSString *MSUtilityStringFormattingCategory;
  * @returns The pretty printed json data payload.
  */
 + (nullable NSString *)prettyPrintJson:(nullable NSData *)data;
+
+/**
+ * Hide sensitive values included in string.
+ *
+ * @param unObfuscatedString String to obfuscate.
+ * @param pattern Pattern to search for.
+ * @param aTemplate Template applied to any found pattern.
+ *
+ * @return Obfuscated string or nil if obfuscation failed.
+ */
++ (nullable NSString *)obfuscateString:(nullable NSString *)unObfuscatedString
+                   searchingForPattern:(NSString *)pattern
+                 toReplaceWithTemplate:(NSString *)aTemplate;
 
 @end
 

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import AppCenter
 import AppCenterAnalytics
 import AppCenterCrashes
@@ -15,6 +18,9 @@ class AppCenterDelegateSwift : AppCenterDelegate {
   func setAppCenterEnabled(_ isEnabled: Bool) {
     MSAppCenter.setEnabled(isEnabled)
   }
+  func setCountryCode(_ countryCode: String?) {
+    MSAppCenter.setCountryCode(countryCode)
+  }
   func setCustomProperties(_ customProperties: MSCustomProperties){
     MSAppCenter.setCustomProperties(customProperties)
   }
@@ -22,20 +28,19 @@ class AppCenterDelegateSwift : AppCenterDelegate {
     return MSAppCenter.installId().uuidString
   }
   func appSecret() -> String {
-    // TODO: Uncomment when appSecret is moved from internal to public
-    // return MSAppCenter.sharedInstance().appSecret()
-    return "Internal"
-  }
-  func logUrl() -> String {
-    // TODO: Uncomment when logUrl is moved from internal to public
-    // return MSAppCenter.sharedInstance().logUrl()
-    return "Internal"
+    return kMSSwiftAppSecret
   }
   func isDebuggerAttached() -> Bool {
     return MSAppCenter.isDebuggerAttached()
   }
+  func startAnalyticsFromLibrary() {
+    MSAppCenter.startFromLibrary(withServices: [MSAnalytics.self])
+  }
   func setUserId(_ userId: String?) {
     MSAppCenter.setUserId(userId);
+  }
+  func setLogUrl(_ logUrl: String?) {
+    MSAppCenter.setLogUrl(logUrl);
   }
 
   //MARK: Modules section.
@@ -65,12 +70,27 @@ class AppCenterDelegateSwift : AppCenterDelegate {
   func trackEvent(_ eventName: String, withProperties properties: Dictionary<String, String>) {
     MSAnalytics.trackEvent(eventName, withProperties: properties)
   }
+  func trackEvent(_ eventName: String, withProperties properties: Dictionary<String, String>, flags: MSFlags) {
+    MSAnalytics.trackEvent(eventName, withProperties: properties, flags:flags)
+  }
+  func trackEvent(_ eventName: String, withTypedProperties properties: MSEventProperties) {
+    MSAnalytics.trackEvent(eventName, withProperties: properties)
+  }
+  func trackEvent(_ eventName: String, withTypedProperties properties: MSEventProperties?, flags: MSFlags) {
+    MSAnalytics.trackEvent(eventName, withProperties: properties, flags: flags)
+  }
+  func resume() {
+    MSAnalytics.resume()
+  }
+  func pause() {
+    MSAnalytics.pause()
+  }
+  #warning("TODO: Uncomment when trackPage is moved from internal to public")
   func trackPage(_ pageName: String) {
-    // TODO: Uncomment when trackPage is moved from internal to public
     // MSAnalytics.trackPage(pageName)
   }
+  #warning("TODO: Uncomment when trackPage is moved from internal to public")
   func trackPage(_ pageName: String, withProperties properties: Dictionary<String, String>) {
-    // TODO: Uncomment when trackPage is moved from internal to public
     // MSAnalytics.trackPage(pageName, withProperties: properties)
   }
 

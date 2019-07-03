@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 @class MSDistributionGroup;
@@ -34,7 +37,7 @@
 /**
  * The flag that indicates whether the release is a mandatory update or not.
  */
-@property(nonatomic) BOOL mandatoryUpdate;
+@property(nonatomic, getter=isMandatoryUpdate) BOOL mandatoryUpdate;
 
 /**
  * The URL that hosts the release notes for this release.

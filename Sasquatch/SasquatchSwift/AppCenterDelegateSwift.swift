@@ -1,7 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import AppCenter
 import AppCenterAnalytics
 import AppCenterCrashes
+import AppCenterData
 import AppCenterDistribute
+import AppCenterAuth
 import AppCenterPush
 
 /**
@@ -37,15 +42,11 @@ class AppCenterDelegateSwift: AppCenterDelegate {
   }
 
   func appSecret() -> String {
-    // TODO: Uncomment when appSecret is moved from internal to public
-    // return MSAppCenter.sharedInstance().appSecret()
-    return "Internal"
+    return kMSSwiftAppSecret
   }
 
-  func logUrl() -> String {
-    // TODO: Uncomment when logUrl is moved from internal to public
-    // return MSAppCenter.sharedInstance().logUrl()
-    return "Internal"
+  func setLogUrl(_ logUrl: String?) {
+    MSAppCenter.setLogUrl(logUrl);
   }
 
   func sdkVersion() -> String {
@@ -63,6 +64,10 @@ class AppCenterDelegateSwift: AppCenterDelegate {
   func setUserId(_ userId: String?) {
     MSAppCenter.setUserId(userId);
   }
+  
+  func setCountryCode(_ countryCode: String?) {
+    MSAppCenter.setCountryCode(countryCode);
+  }
 
   // Modules section.
   func isAnalyticsEnabled() -> Bool {
@@ -75,6 +80,10 @@ class AppCenterDelegateSwift: AppCenterDelegate {
 
   func isDistributeEnabled() -> Bool {
     return MSDistribute.isEnabled()
+  }
+
+  func isAuthEnabled() -> Bool {
+    return MSAuth.isEnabled()
   }
 
   func isPushEnabled() -> Bool {
@@ -91,6 +100,10 @@ class AppCenterDelegateSwift: AppCenterDelegate {
 
   func setDistributeEnabled(_ isEnabled: Bool) {
     MSDistribute.setEnabled(isEnabled)
+  }
+
+  func setAuthEnabled(_ isEnabled: Bool) {
+    MSAuth.setEnabled(isEnabled)
   }
 
   func setPushEnabled(_ isEnabled: Bool) {
@@ -118,13 +131,13 @@ class AppCenterDelegateSwift: AppCenterDelegate {
     MSAnalytics.trackEvent(eventName, withProperties: properties, flags: flags)
   }
 
+  #warning("TODO: Uncomment when trackPage is moved from internal to public")
   func trackPage(_ pageName: String) {
-    // TODO: Uncomment when trackPage is moved from internal to public
     // MSAnalytics.trackPage(pageName)
   }
 
+  #warning("TODO: Uncomment when trackPage is moved from internal to public")
   func trackPage(_ pageName: String, withProperties properties: Dictionary<String, String>) {
-    // TODO: Uncomment when trackPage is moved from internal to public
     // MSAnalytics.trackPage(pageName, withProperties: properties)
   }
 
@@ -145,7 +158,7 @@ class AppCenterDelegateSwift: AppCenterDelegate {
     MSCrashes.generateTestCrash()
   }
 
-  // MSDistribute section
+  // MSDistribute section.
   func showConfirmationAlert() {
     let sharedInstanceSelector = #selector(Selectors.sharedInstance)
     let confirmationAlertSelector = #selector(Selectors.showConfirmationAlert(_:))
@@ -180,8 +193,27 @@ class AppCenterDelegateSwift: AppCenterDelegate {
     if (MSDistribute.responds(to: sharedInstanceSelector)) {
       let distributeInstance = MSDistribute.perform(sharedInstanceSelector).takeUnretainedValue()
       let distriuteDelegate = distributeInstance.perform(delegateSelector).takeUnretainedValue()
-      _ = distriuteDelegate.distribute?(distributeInstance as! MSDistribute, releaseAvailableWith: releaseDetails)
+      _ = distriuteDelegate.distribute?(distributeInstance as? MSDistribute, releaseAvailableWith: releaseDetails)
     }
+  }
+
+  // MSAuth section.
+  func signIn(_ completionHandler: @escaping (_ signInInformation:MSUserInformation?, _ error:Error?) -> Void) {
+    MSAuth.signIn { userInformation, error in
+      if error == nil {
+        UserDefaults.standard.set(true, forKey: kMSUserIdentity)
+        print("Auth.signIn succeeded, accountId=\(userInformation?.accountId ?? "nil")")
+      }
+      else {
+        print("Auth.signIn failed, error=\(String(describing: error))")
+      }
+      completionHandler(userInformation, error)
+    }
+  }
+
+  func signOut() {
+    MSAuth.signOut()
+    UserDefaults.standard.set(false, forKey: kMSUserIdentity)
   }
 
   // Last crash report section.
@@ -271,5 +303,25 @@ class AppCenterDelegateSwift: AppCenterDelegate {
 
   func lastCrashReportDeviceAppNamespace() -> String? {
     return MSCrashes.lastSessionCrashReport()?.device.appNamespace
+  }
+  
+  // MSData
+  
+  func listDocumentsWithPartition(_ partitionName: String, documentType: AnyClass, completionHandler: @escaping (_ paginatedDocuments:MSPaginatedDocuments) -> Void) {
+    MSData.listDocuments(withType: documentType, partition: partitionName, completionHandler: completionHandler)
+  }
+  
+  func createDocumentWithPartition(_ partitionName: String, documentId: String, document: MSDictionaryDocument, writeOptions: MSWriteOptions, completionHandler: @escaping (_ document:MSDocumentWrapper) -> Void) {
+    MSData.create(withDocumentID: documentId, document: document, partition: partitionName, completionHandler: completionHandler);
+  }
+  
+  func replaceDocumentWithPartition(_ partitionName: String, documentId: String, document: MSDictionaryDocument, writeOptions: MSWriteOptions, completionHandler: @escaping (_ document:MSDocumentWrapper) -> Void) {
+    MSData.replace(withDocumentID: documentId, document: document, partition: partitionName, writeOptions: writeOptions, completionHandler: completionHandler)
+  }
+  
+  func deleteDocumentWithPartition(_ partitionName: String, documentId: String) {
+    MSData.delete(withDocumentID: documentId, partition: partitionName, completionHandler: { document in
+      print("Data.delete document with id \(documentId) succeeded")
+    })
   }
 }

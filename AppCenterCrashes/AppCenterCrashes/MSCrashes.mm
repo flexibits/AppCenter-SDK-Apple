@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSAppCenterInternal.h"
 #import "MSAppleErrorLog.h"
 #import "MSChannelUnitConfiguration.h"
@@ -14,7 +17,6 @@
 #import "MSErrorAttachmentLogInternal.h"
 #import "MSErrorLogFormatter.h"
 #import "MSHandledErrorLog.h"
-#import "MSServiceAbstractProtected.h"
 #import "MSSessionContext.h"
 #import "MSUserIdContext.h"
 #import "MSUtility+File.h"
@@ -173,7 +175,9 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 + (void)generateTestCrash {
   @synchronized([MSCrashes sharedInstance]) {
     if ([[MSCrashes sharedInstance] canBeUsed]) {
-      if ([MSUtility currentAppEnvironment] != MSEnvironmentAppStore) {
+      if ([MSUtility currentAppEnvironment] == MSEnvironmentAppStore) {
+        MSLogWarning([MSCrashes logTag], @"GenerateTestCrash was just called in an App Store environment. The call will be ignored.");
+      } else {
         if ([MSAppCenter isDebuggerAttached]) {
           MSLogWarning([MSCrashes logTag], @"The debugger is attached. The following crash cannot be detected by the SDK!");
         }
@@ -181,8 +185,6 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
         // Crashing the app here!
         __builtin_trap();
       }
-    } else {
-      MSLogWarning([MSCrashes logTag], @"GenerateTestCrash was just called in an App Store environment. The call will be ignored");
     }
   }
 }
@@ -192,10 +194,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 }
 
 + (void)setUserConfirmationHandler:(_Nullable MSUserConfirmationHandler)userConfirmationHandler {
-
-  // FIXME: Type cast is required at the moment. Need to fix the root cause.
-  MSCrashes *crashes = static_cast<MSCrashes *>([self sharedInstance]);
-  crashes.userConfirmationHandler = userConfirmationHandler;
+  [[MSCrashes sharedInstance] setUserConfirmationHandler:userConfirmationHandler];
 }
 
 + (void)notifyWithUserConfirmation:(MSUserConfirmation)userConfirmation {
@@ -232,11 +231,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
  * This API is not public and is used by wrapper SDKs.
  */
 + (void)trackModelException:(MSException *)exception withProperties:(nullable NSDictionary<NSString *, NSString *> *)properties {
-  @synchronized(self) {
-    if ([[MSCrashes sharedInstance] canBeUsed]) {
-      [[MSCrashes sharedInstance] trackModelException:exception withProperties:properties];
-    }
-  }
+  [[MSCrashes sharedInstance] trackModelException:exception withProperties:properties];
 }
 
 #pragma mark - Service initialization
@@ -250,7 +245,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 
     _didCrashInLastSession = NO;
     _delayedProcessingSemaphore = dispatch_semaphore_create(0);
-    _automaticProcessing = YES;
+    _automaticProcessingEnabled = YES;
     _shouldReleaseProcessingSemaphore = YES;
 #if !TARGET_OS_TV
     _enableMachExceptionHandler = YES;
@@ -519,37 +514,37 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 #pragma mark - Channel Delegate
 
 - (void)channel:(id<MSChannelProtocol>)__unused channel willSendLog:(id<MSLog>)log {
-  id<MSCrashesDelegate> strongDelegate = self.delegate;
-  if (strongDelegate && [strongDelegate respondsToSelector:@selector(crashes:willSendErrorReport:)]) {
+  id<MSCrashesDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(crashes:willSendErrorReport:)]) {
     NSObject *logObject = static_cast<NSObject *>(log);
     if ([logObject isKindOfClass:[MSAppleErrorLog class]]) {
       MSAppleErrorLog *appleErrorLog = static_cast<MSAppleErrorLog *>(log);
       MSErrorReport *report = [MSErrorLogFormatter errorReportFromLog:appleErrorLog];
-      [strongDelegate crashes:self willSendErrorReport:report];
+      [delegate crashes:self willSendErrorReport:report];
     }
   }
 }
 
 - (void)channel:(id<MSChannelProtocol>)__unused channel didSucceedSendingLog:(id<MSLog>)log {
-  id<MSCrashesDelegate> strongDelegate = self.delegate;
-  if (strongDelegate && [strongDelegate respondsToSelector:@selector(crashes:didSucceedSendingErrorReport:)]) {
+  id<MSCrashesDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(crashes:didSucceedSendingErrorReport:)]) {
     NSObject *logObject = static_cast<NSObject *>(log);
     if ([logObject isKindOfClass:[MSAppleErrorLog class]]) {
       MSAppleErrorLog *appleErrorLog = static_cast<MSAppleErrorLog *>(log);
       MSErrorReport *report = [MSErrorLogFormatter errorReportFromLog:appleErrorLog];
-      [strongDelegate crashes:self didSucceedSendingErrorReport:report];
+      [delegate crashes:self didSucceedSendingErrorReport:report];
     }
   }
 }
 
 - (void)channel:(id<MSChannelProtocol>)__unused channel didFailSendingLog:(id<MSLog>)log withError:(NSError *)error {
-  id<MSCrashesDelegate> strongDelegate = self.delegate;
-  if (strongDelegate && [strongDelegate respondsToSelector:@selector(crashes:didFailSendingErrorReport:withError:)]) {
+  id<MSCrashesDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(crashes:didFailSendingErrorReport:withError:)]) {
     NSObject *logObject = static_cast<NSObject *>(log);
     if ([logObject isKindOfClass:[MSAppleErrorLog class]]) {
       MSAppleErrorLog *appleErrorLog = static_cast<MSAppleErrorLog *>(log);
       MSErrorReport *report = [MSErrorLogFormatter errorReportFromLog:appleErrorLog];
-      [strongDelegate crashes:self didFailSendingErrorReport:report withError:error];
+      [delegate crashes:self didFailSendingErrorReport:report withError:error];
     }
   }
 }
@@ -653,7 +648,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
    * automatic processing is disabled. Though it sounds counterintuitive, this is important because there are scenarios in some wrappers
    * (i.e. RN) where the application state is not ready by the time crash processing needs to happen.
    */
-  if (self.automaticProcessing && ([MSUtility applicationState] == MSApplicationStateBackground)) {
+  if (self.automaticProcessingEnabled && ([MSUtility applicationState] == MSApplicationStateBackground)) {
     MSLogWarning([MSCrashes logTag], @"Crashes will not be processed because the application is in the background.");
     return;
   }
@@ -720,8 +715,8 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
     MSPLCrashReport *report = foundCrashReports[fileURL];
     MSErrorReport *errorReport = foundErrorReports[fileURL];
     MSAppleErrorLog *log = [MSErrorLogFormatter errorLogFromCrashReport:report];
-    if (!self.automaticProcessing || [self shouldProcessErrorReport:errorReport]) {
-      if (!self.automaticProcessing) {
+    if (!self.automaticProcessingEnabled || [self shouldProcessErrorReport:errorReport]) {
+      if (!self.automaticProcessingEnabled) {
         MSLogDebug([MSCrashes logTag], @"Automatic crash processing is disabled, storing the crash report for later processing: %@",
                    report.debugDescription);
       } else {
@@ -744,7 +739,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
   }
 
   // Send reports or await user confirmation if automatic processing is enabled.
-  if (self.automaticProcessing) {
+  if (self.automaticProcessingEnabled) {
     [self sendCrashReportsOrAwaitUserConfirmation];
   }
 }
@@ -774,9 +769,13 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
                                                                                   withString:kMSTargetTokenFileExtension];
           NSURL *targetTokenFileURL = [NSURL fileURLWithPath:targetTokenFilePath];
           NSString *targetToken = [NSString stringWithContentsOfURL:targetTokenFileURL encoding:NSUTF8StringEncoding error:nil];
-          if (targetToken != nil) {
+          if (targetToken) {
             targetToken = [self.targetTokenEncrypter decryptString:targetToken];
-            [item addTransmissionTargetToken:targetToken];
+            if (targetToken) {
+              [item addTransmissionTargetToken:targetToken];
+            } else {
+              MSLogError([MSAppCenter logTag], @"Failed to decrypt the target token.");
+            }
 
             // Delete target token file.
             [MSUtility deleteFileAtURL:targetTokenFileURL];
@@ -1020,14 +1019,11 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 }
 
 - (BOOL)shouldProcessErrorReport:(MSErrorReport *)errorReport {
-  id<MSCrashesDelegate> strongDelegate = self.delegate;
-  return (!strongDelegate || ![strongDelegate respondsToSelector:@selector(crashes:shouldProcessErrorReport:)] ||
-          [strongDelegate crashes:self shouldProcessErrorReport:errorReport]);
-}
-
-- (BOOL)delegateImplementsAttachmentCallback {
-  id<MSCrashesDelegate> strongDelegate = self.delegate;
-  return strongDelegate && [strongDelegate respondsToSelector:@selector(attachmentsWithCrashes:forErrorReport:)];
+  id<MSCrashesDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(crashes:shouldProcessErrorReport:)]) {
+    return [delegate crashes:self shouldProcessErrorReport:errorReport];
+  }
+  return YES;
 }
 
 // We need to override setter, because it's default behavior creates an NSArray, and some tests fail.
@@ -1055,14 +1051,14 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 
     // User confirmation is set to MSUserConfirmationAlways.
     MSLogDebug([MSCrashes logTag], @"The flag for user confirmation is set to MSUserConfirmationAlways, continue sending logs");
-    [self notifyWithUserConfirmation:MSUserConfirmationSend];
+    [self handleUserConfirmation:MSUserConfirmationSend];
     return alwaysSend;
-  } else if (self.automaticProcessing && !(self.userConfirmationHandler && [self userPromptedForConfirmation])) {
+  } else if (self.automaticProcessingEnabled && !(self.userConfirmationHandler && [self userPromptedForConfirmation])) {
 
     // User confirmation handler doesn't exist or returned NO which means 'want to process'.
     MSLogDebug([MSCrashes logTag], @"The user confirmation handler is not implemented or returned NO, continue sending logs");
-    [self notifyWithUserConfirmation:MSUserConfirmationSend];
-  } else if (!self.automaticProcessing) {
+    [self handleUserConfirmation:MSUserConfirmationSend];
+  } else if (!self.automaticProcessingEnabled) {
     MSLogDebug([MSCrashes logTag], @"Automatic crash processing is disabled and \"AlwaysSend\" is false. Awaiting user confirmation.");
   }
   return alwaysSend;
@@ -1098,6 +1094,17 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 }
 
 - (void)notifyWithUserConfirmation:(MSUserConfirmation)userConfirmation {
+
+  // Check if there is no handler set and unprocessedReports are not initialized as NSMutableArray (Init occurs in correct call sequence).
+  if (!self.userConfirmationHandler && !self.unprocessedReports) {
+    MSLogError(MSCrashes.logTag, @"Incorrect usage of notifyWithUserConfirmation: it should only be called from userConfirmationHandler. "
+                                 @"For more information refer to the documentation.");
+    return;
+  }
+  [self handleUserConfirmation:userConfirmation];
+}
+
+- (void)handleUserConfirmation:(MSUserConfirmation)userConfirmation {
   NSArray<MSErrorAttachmentLog *> *attachments;
 
   // Check for user confirmation.
@@ -1132,8 +1139,9 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
     NSURL *fileURL = self.unprocessedFilePaths[i];
 
     // Get error attachments.
-    if ([self delegateImplementsAttachmentCallback]) {
-      attachments = [self.delegate attachmentsWithCrashes:self forErrorReport:report];
+    id<MSCrashesDelegate> delegate = self.delegate;
+    if ([delegate respondsToSelector:@selector(attachmentsWithCrashes:forErrorReport:)]) {
+      attachments = [delegate attachmentsWithCrashes:self forErrorReport:report];
     } else {
       MSLogDebug([MSCrashes logTag], @"attachmentsWithCrashes is not implemented");
     }
@@ -1145,7 +1153,7 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
     log.userId = [[MSUserIdContext sharedInstance] userIdAt:log.timestamp];
 
     // Then, enqueue crash log.
-    [self.channelUnit enqueueItem:log flags:MSFlagsPersistenceCritical];
+    [self.channelUnit enqueueItem:log flags:MSFlagsCritical];
 
     // Send error attachments.
     [self sendErrorAttachments:attachments withIncidentIdentifier:report.incidentIdentifier];
@@ -1175,28 +1183,31 @@ __attribute__((noreturn)) static void uncaught_cxx_exception_handler(const MSCra
 #pragma mark - Handled exceptions
 
 - (void)trackModelException:(MSException *)exception withProperties:(NSDictionary<NSString *, NSString *> *)properties {
-  if (![self isEnabled])
-    return;
+  @synchronized(self) {
+    if (![self canBeUsed] || ![self isEnabled]) {
+      return;
+    }
 
-  // Create an error log.
-  MSHandledErrorLog *log = [MSHandledErrorLog new];
+    // Create an error log.
+    MSHandledErrorLog *log = [MSHandledErrorLog new];
 
-  // Set userId to the error log.
-  log.userId = [[MSUserIdContext sharedInstance] userId];
+    // Set userId to the error log.
+    log.userId = [[MSUserIdContext sharedInstance] userId];
 
-  // Set properties of the error log.
-  log.errorId = MS_UUID_STRING;
-  log.exception = exception;
-  if (properties && properties.count > 0) {
+    // Set properties of the error log.
+    log.errorId = MS_UUID_STRING;
+    log.exception = exception;
+    if (properties && properties.count > 0) {
 
-    // Send only valid properties.
-    log.properties = [MSUtility validateProperties:properties
-                                        forLogName:[NSString stringWithFormat:@"ErrorLog: %@", log.errorId]
-                                              type:log.type];
+      // Send only valid properties.
+      log.properties = [MSUtility validateProperties:properties
+                                          forLogName:[NSString stringWithFormat:@"ErrorLog: %@", log.errorId]
+                                                type:log.type];
+    }
+
+    // Enqueue log.
+    [self.channelUnit enqueueItem:log flags:MSFlagsDefault];
   }
-
-  // Enqueue log.
-  [self.channelUnit enqueueItem:log flags:MSFlagsDefault];
 }
 
 @end

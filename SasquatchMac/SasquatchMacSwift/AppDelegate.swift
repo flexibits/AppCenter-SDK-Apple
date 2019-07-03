@@ -1,21 +1,34 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import Cocoa
+import CoreLocation
 
 import AppCenter
 import AppCenterAnalytics
 import AppCenterCrashes
 import AppCenterPush
 
+enum StartupMode: Int {
+    case appCenter
+    case oneCollector
+    case both
+    case none
+    case skip
+}
+
 @NSApplicationMain
 @objc(AppDelegate)
-class AppDelegate: NSObject, NSApplicationDelegate, MSCrashesDelegate, MSPushDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, MSCrashesDelegate, MSPushDelegate, CLLocationManagerDelegate {
 
   var rootController: NSWindowController!
-
+  var locationManager: CLLocationManager = CLLocationManager()
+    
   func applicationDidFinishLaunching(_ notification: Notification) {
+    
     // Crashes Delegate.
     MSCrashes.setDelegate(self);
     MSCrashes.setUserConfirmationHandler({ (errorReports: [MSErrorReport]) in
-
       let alert: NSAlert = NSAlert()
       alert.messageText = "Sorry about that!"
       alert.informativeText = "Do you want to send an anonymous crash report so we can fix the issue?"
@@ -43,20 +56,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, MSCrashesDelegate, MSPushDel
     // Push Delegate.
     MSPush.setDelegate(self);
 
+    // Set loglevel to verbose.
     MSAppCenter.setLogLevel(MSLogLevel.verbose)
 
+    // Set custom log URL.
+    let logUrl = UserDefaults.standard.string(forKey: kMSLogUrl)
+    if logUrl != nil {
+      MSAppCenter.setLogUrl(logUrl)
+    }
+
     // Set user id.
-    let userId = UserDefaults.standard.string(forKey: "userId")
+    let userId = UserDefaults.standard.string(forKey: kMSUserIdKey)
     if userId != nil {
       MSAppCenter.setUserId(userId)
     }
+    
+    // Set location manager.
+    locationManager.delegate = self
+    locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+
+    // Set max storage size.
+    let storageMaxSize = UserDefaults.standard.object(forKey: kMSStorageMaxSizeKey) as? Int
+    if storageMaxSize != nil {
+        MSAppCenter.setMaxStorageSize(storageMaxSize!, completionHandler: { success in
+            DispatchQueue.main.async {
+                if success {
+                    let realSize = Int64(ceil(Double(storageMaxSize!) / Double(kMSStoragePageSize))) * Int64(kMSStoragePageSize)
+                    UserDefaults.standard.set(realSize, forKey: kMSStorageMaxSizeKey)
+                } else {
+                    
+                    // Remove invalid value.
+                    UserDefaults.standard.removeObject(forKey: kMSStorageMaxSizeKey)
+                }
+            }
+        })
+    }
 
     // Start AppCenter.
-    MSAppCenter.start("7e873482-108f-4609-8ef2-c4cebd7418c0", withServices : [ MSAnalytics.self, MSCrashes.self, MSPush.self ])
+    let services = [MSAnalytics.self, MSCrashes.self, MSPush.self]
+    let startTarget = StartupMode(rawValue: UserDefaults.standard.integer(forKey: kMSStartTargetKey))!
+    let appSecret = UserDefaults.standard.string(forKey: kMSAppSecret) ?? kMSSwiftAppSecret
+    switch startTarget {
+    case .appCenter:
+        MSAppCenter.start(appSecret, withServices: services)
+        break
+    case .oneCollector:
+        MSAppCenter.start("target=\(kMSSwiftTargetToken)", withServices: services)
+        break
+    case .both:
+        MSAppCenter.start("appsecret=\(appSecret);target=\(kMSSwiftTargetToken)", withServices: services)
+        break
+    case .none:
+        MSAppCenter.start(withServices: services)
+        break
+    case .skip:
+        break
+    }
 
     AppCenterProvider.shared().appCenter = AppCenterDelegateSwift()
 
     initUI()
+
+    overrideCountryCode()
   }
 
   func initUI() {
@@ -66,6 +127,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, MSCrashesDelegate, MSPushDel
     rootController.window?.makeKeyAndOrderFront(self)
   }
 
+  func overrideCountryCode() {
+    if CLLocationManager.locationServicesEnabled() {
+      self.locationManager.startUpdatingLocation()
+    }
+    else {
+      let alert : NSAlert = NSAlert()
+      alert.messageText = "Location service is disabled"
+      alert.informativeText = "Please enable location service on your Mac."
+      alert.addButton(withTitle: "OK")
+      alert.runModal()
+    }
+  }
   // Crashes Delegate
 
   func crashes(_ crashes: MSCrashes!, shouldProcessErrorReport errorReport: MSErrorReport!) -> Bool {
@@ -144,5 +217,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, MSCrashesDelegate, MSPushDel
     alert.informativeText = message
     alert.addButton(withTitle: "OK")
     alert.runModal()
+  }
+    
+  // CLLocationManager Delegate
+  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    self.locationManager.stopUpdatingLocation()
+    let userLocation:CLLocation = locations[0] as CLLocation
+    CLGeocoder().reverseGeocodeLocation(userLocation) { (placemarks, error) in
+      if error == nil {
+        MSAppCenter.setCountryCode(placemarks?.first?.isoCountryCode)
+      }
+    }
+  }
+    
+  func locationManager(_ Manager: CLLocationManager, didFailWithError error: Error) {
+    print("Failed to find user's location: \(error.localizedDescription)")
   }
 }

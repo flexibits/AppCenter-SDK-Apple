@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSBooleanTypedProperty.h"
 #import "MSDateTimeTypedProperty.h"
 #import "MSDoubleTypedProperty.h"
@@ -17,7 +20,7 @@
 - (void)testInitWithStringDictionaryWhenStringDictionaryHasValues {
 
   // If
-  NSDictionary *stringProperties = @{ @"key1" : @"val1", @"key2" : @"val2" };
+  NSDictionary *stringProperties = @{@"key1" : @"val1", @"key2" : @"val2"};
 
   // When
   MSEventProperties *sut = [[MSEventProperties alloc] initWithStringDictionary:stringProperties];
@@ -217,6 +220,18 @@
 
   // Then
   XCTAssertTrue(isEmpty);
+}
+
+- (void)testIsNoWhenEqualsWrongClass {
+
+  // If
+  NSObject *invalidEvent = [NSObject new];
+
+  // When
+  BOOL result = [MSEventProperties isEqual:invalidEvent];
+
+  // Then
+  XCTAssertFalse(result);
 }
 
 - (void)testIsEmptyReturnsFalseWhenContainsProperties {

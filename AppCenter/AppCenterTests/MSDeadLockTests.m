@@ -1,10 +1,17 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSAbstractLog.h"
 #import "MSAppCenter.h"
+#import "MSAppCenterInternal.h"
 #import "MSAppCenterPrivate.h"
 #import "MSChannelDelegate.h"
+#import "MSChannelGroupDefault.h"
 #import "MSChannelUnitProtocol.h"
 #import "MSMockService.h"
 #import "MSTestFrameworks.h"
+#import "MSAuthTokenContext.h"
+#import "MSAuthTokenContextPrivate.h"
 
 @interface MSDeadLockTests : XCTestCase
 @end
@@ -39,11 +46,15 @@ static MSDummyService2 *sharedInstanceService2 = nil;
   return @"service1";
 }
 
-- (void)channel:(id<MSChannelProtocol>)channel didPrepareLog:(id<MSLog>)log internalId:(NSString *)internalId flags:(MSFlags)flags {
+- (void)channel:(__unused id<MSChannelProtocol>)channel
+    didPrepareLog:(__unused id<MSLog>)log
+       internalId:(__unused NSString *)internalId
+            flags:(__unused MSFlags)flags {
 
   // Operation locking AC while in ChannelDelegate.
   NSUUID *__unused deviceId = [MSAppCenter installId];
 }
+
 - (void)startWithChannelGroup:(id<MSChannelGroupProtocol>)channelGroup
                     appSecret:(nullable NSString *)appSecret
       transmissionTargetToken:(nullable NSString *)token
@@ -88,6 +99,12 @@ static MSDummyService2 *sharedInstanceService2 = nil;
 
 @implementation MSDeadLockTests
 
+- (void)setUp {
+  [super setUp];
+  [MSAppCenter resetSharedInstance];
+  [MSAuthTokenContext resetSharedInstance];
+}
+
 - (void)testDeadLockAtStartup {
 
   // If
@@ -107,6 +124,12 @@ static MSDummyService2 *sharedInstanceService2 = nil;
                                    XCTFail(@"Expectation Failed with error: %@", error);
                                  }
                                }];
+
+  // Wait background queue.
+  __block MSChannelGroupDefault *channelGroup = [MSAppCenter sharedInstance].channelGroup;
+  dispatch_sync(channelGroup.logsDispatchQueue, ^{
+                  dispatch_suspend(channelGroup.logsDispatchQueue);
+                });
 }
 
 @end

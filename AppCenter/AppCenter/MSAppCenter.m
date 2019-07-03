@@ -1,9 +1,13 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSAppCenterIngestion.h"
 #import "MSAppCenterInternal.h"
 #import "MSAppCenterPrivate.h"
 #import "MSAppDelegateForwarder.h"
+#import "MSAuthTokenContext.h"
 #import "MSChannelGroupDefault.h"
 #import "MSChannelGroupDefaultPrivate.h"
 #import "MSChannelUnitConfiguration.h"
@@ -51,6 +55,8 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 
 @synthesize installId = _installId;
 
+@synthesize logUrl = _logUrl;
+
 + (instancetype)sharedInstance {
   dispatch_once(&onceToken, ^{
     if (sharedInstance == nil) {
@@ -97,7 +103,7 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 }
 
 + (BOOL)isConfigured {
-  return [[MSAppCenter sharedInstance] sdkConfigured] && [[MSAppCenter sharedInstance] configuredFromApplication];
+  return [MSAppCenter sharedInstance].sdkConfigured && [MSAppCenter sharedInstance].configuredFromApplication;
 }
 
 + (void)setLogUrl:(NSString *)logUrl {
@@ -105,13 +111,16 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 }
 
 + (void)setEnabled:(BOOL)isEnabled {
-  @synchronized([MSAppCenter sharedInstance]) {
-    if ([[MSAppCenter sharedInstance] canBeUsed]) {
-      [[MSAppCenter sharedInstance] setEnabled:isEnabled];
-    }
-  }
+  [[MSAppCenter sharedInstance] setEnabled:isEnabled];
 }
 
+/**
+ * Checks if SDK is enabled and initialized.
+ *
+ * @discussion This method is different from the instance one and in addition checks canBeUsed.
+ *
+ * @return `YES` if SDK is enabled and initialized, `NO` otherwise
+ */
 + (BOOL)isEnabled {
   @synchronized([MSAppCenter sharedInstance]) {
     if ([[MSAppCenter sharedInstance] canBeUsed]) {
@@ -122,9 +131,7 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 }
 
 + (BOOL)isAppDelegateForwarderEnabled {
-  @synchronized([MSAppCenter sharedInstance]) {
-    return [MSAppDelegateForwarder sharedInstance].enabled;
-  }
+  return [MSAppDelegateForwarder sharedInstance].enabled;
 }
 
 + (NSUUID *)installId {
@@ -212,12 +219,15 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
   [[MSAppCenter sharedInstance] setUserId:userId];
 }
 
++ (void)setCountryCode:(NSString *)countryCode {
+  [[MSDeviceTracker sharedInstance] setCountryCode:countryCode];
+}
+
 #pragma mark - private
 
 - (instancetype)init {
   if ((self = [super init])) {
     _services = [NSMutableArray new];
-    _logUrl = kMSAppCenterBaseUrl;
     _enabledStateUpdating = NO;
   }
   return self;
@@ -277,33 +287,32 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 }
 
 - (void)start:(NSString *)secretString withServices:(NSArray<Class> *)services fromApplication:(BOOL)fromApplication {
-  @synchronized(self) {
-    NSString *appSecret = [MSUtility appSecretFrom:secretString];
-    NSString *transmissionTargetToken = [MSUtility transmissionTargetTokenFrom:secretString];
-    BOOL configured = [self configureWithAppSecret:appSecret
-                           transmissionTargetToken:transmissionTargetToken
-                                   fromApplication:fromApplication];
-    if (configured && services) {
-      NSArray *sortedServices = [self sortServices:services];
-      MSLogVerbose([MSAppCenter logTag], @"Start services %@ from %@", [sortedServices componentsJoinedByString:@", "],
-                   (fromApplication ? @"an application" : @"a library"));
-      NSMutableArray<NSString *> *servicesNames = [NSMutableArray arrayWithCapacity:sortedServices.count];
-      for (Class service in sortedServices) {
-        if ([self startService:service
-                          withAppSecret:appSecret
-                transmissionTargetToken:transmissionTargetToken
-                             andSendLog:NO
-                        fromApplication:fromApplication]) {
-          [servicesNames addObject:[service serviceName]];
-        }
+  NSString *appSecret = [MSUtility appSecretFrom:secretString];
+  NSString *transmissionTargetToken = [MSUtility transmissionTargetTokenFrom:secretString];
+  BOOL configured = [self configureWithAppSecret:appSecret transmissionTargetToken:transmissionTargetToken fromApplication:fromApplication];
+  if (configured && services) {
+    NSArray *sortedServices = [self sortServices:services];
+    MSLogVerbose([MSAppCenter logTag], @"Start services %@ from %@", [sortedServices componentsJoinedByString:@", "],
+                 (fromApplication ? @"an application" : @"a library"));
+    NSMutableArray<NSString *> *servicesNames = [NSMutableArray arrayWithCapacity:sortedServices.count];
+    for (Class service in sortedServices) {
+      if ([self startService:service
+                        withAppSecret:appSecret
+              transmissionTargetToken:transmissionTargetToken
+                           andSendLog:NO
+                      fromApplication:fromApplication]) {
+        [servicesNames addObject:[service serviceName]];
       }
-      if ([servicesNames count] > 0) {
-        if (fromApplication) {
-          [self sendStartServiceLog:servicesNames];
-        }
-      } else {
-        MSLogDebug([MSAppCenter logTag], @"No services have been started.");
+    }
+
+    // Finish auth token context initialization.
+    [[MSAuthTokenContext sharedInstance] finishInitialize];
+    if ([servicesNames count] > 0) {
+      if (fromApplication) {
+        [self sendStartServiceLog:servicesNames];
       }
+    } else {
+      MSLogDebug([MSAppCenter logTag], @"No services have been started.");
     }
   }
 }
@@ -408,11 +417,22 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
   }
 }
 
+- (NSString *)logUrl {
+  return _logUrl;
+}
+
 - (void)setLogUrl:(NSString *)logUrl {
   @synchronized(self) {
     _logUrl = logUrl;
-    if (self.channelGroup) {
-      [self.channelGroup setLogUrl:logUrl];
+    id<MSChannelGroupProtocol> localChannelGroup = self.channelGroup;
+    if (localChannelGroup) {
+      if (self.appSecret) {
+        MSLogInfo([MSAppCenter logTag], @"The log url of App Center endpoint was changed to %@", self.logUrl);
+        [localChannelGroup setLogUrl:logUrl];
+      } else {
+        MSLogInfo([MSAppCenter logTag], @"The log url of One Collector endpoint was changed to %@", self.logUrl);
+        [self.oneCollectorChannelDelegate setLogUrl:logUrl];
+      }
     }
   }
 }
@@ -456,7 +476,7 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 
 - (void)setUserId:(NSString *)userId {
   if (!self.configuredFromApplication) {
-    MSLogError([MSAppCenter logTag], @"AppCenter must be configured from application, libraries cannot use call setUserId.");
+    MSLogError([MSAppCenter logTag], @"AppCenter must be configured from application, libraries cannot call setUserId.");
     return;
   }
   if (!self.appSecret && !self.defaultTransmissionTargetToken) {
@@ -486,22 +506,27 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 #endif
 
 - (void)setEnabled:(BOOL)isEnabled {
-  self.enabledStateUpdating = YES;
-  if ([self isEnabled] != isEnabled) {
+  @synchronized(self) {
+    if (![self canBeUsed]) {
+      return;
+    }
+    self.enabledStateUpdating = YES;
+    if ([self isEnabled] != isEnabled) {
 
-    // Persist the enabled status.
-    [MS_USER_DEFAULTS setObject:@(isEnabled) forKey:kMSAppCenterIsEnabledKey];
+      // Persist the enabled status.
+      [MS_USER_DEFAULTS setObject:@(isEnabled) forKey:kMSAppCenterIsEnabledKey];
 
-    // Enable/disable pipeline.
-    [self applyPipelineEnabledState:isEnabled];
+      // Enable/disable pipeline.
+      [self applyPipelineEnabledState:isEnabled];
+    }
+
+    // Propagate enable/disable on all services.
+    for (id<MSServiceInternal> service in self.services) {
+      [[service class] setEnabled:isEnabled];
+    }
+    self.enabledStateUpdating = NO;
+    MSLogInfo([MSAppCenter logTag], @"App Center SDK %@.", isEnabled ? @"enabled" : @"disabled");
   }
-
-  // Propagate enable/disable on all services.
-  for (id<MSServiceInternal> service in self.services) {
-    [[service class] setEnabled:isEnabled];
-  }
-  self.enabledStateUpdating = NO;
-  MSLogInfo([MSAppCenter logTag], @"App Center SDK %@.", isEnabled ? @"enabled" : @"disabled");
 }
 
 - (BOOL)isEnabled {
@@ -541,36 +566,43 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
     [[MSUserIdContext sharedInstance] clearUserIdHistory];
   }
 
-  // Propagate to channel group.
-  [self.channelGroup setEnabled:isEnabled andDeleteDataOnDisabled:YES];
+  @synchronized(self) {
 
-  // Send started services.
-  if (self.startedServiceNames && isEnabled) {
-    [self sendStartServiceLog:self.startedServiceNames];
-    self.startedServiceNames = nil;
+    // Propagate to channel group.
+    [self.channelGroup setEnabled:isEnabled andDeleteDataOnDisabled:YES];
+
+    // Send started services.
+    if (self.startedServiceNames && isEnabled) {
+      [self sendStartServiceLog:self.startedServiceNames];
+      self.startedServiceNames = nil;
+    }
   }
 }
 
 - (void)initializeChannelGroup {
+  @synchronized(self) {
 
-  // Construct channel group.
-  self.oneCollectorChannelDelegate =
-      self.oneCollectorChannelDelegate ?: [[MSOneCollectorChannelDelegate alloc] initWithInstallId:self.installId];
-  if (!self.channelGroup) {
-    self.channelGroup = [[MSChannelGroupDefault alloc] initWithInstallId:self.installId logUrl:self.logUrl];
-    [self.channelGroup addDelegate:self.oneCollectorChannelDelegate];
-    if (self.requestedMaxStorageSizeInBytes) {
-      long storageSize = [self.requestedMaxStorageSizeInBytes longValue];
-      [self.channelGroup setMaxStorageSize:storageSize completionHandler:self.maxStorageSizeCompletionHandler];
+    // Construct channel group.
+    if (!self.oneCollectorChannelDelegate) {
+      self.oneCollectorChannelDelegate = [[MSOneCollectorChannelDelegate alloc] initWithInstallId:self.installId
+                                                                                          baseUrl:self.appSecret ? nil : self.logUrl];
     }
-  }
-  [self.channelGroup setAppSecret:self.appSecret];
+    if (!self.channelGroup) {
+      self.channelGroup = [[MSChannelGroupDefault alloc] initWithInstallId:self.installId logUrl:self.logUrl ?: kMSAppCenterBaseUrl];
+      [self.channelGroup addDelegate:self.oneCollectorChannelDelegate];
+      if (self.requestedMaxStorageSizeInBytes) {
+        long storageSize = [self.requestedMaxStorageSizeInBytes longValue];
+        [self.channelGroup setMaxStorageSize:storageSize completionHandler:self.maxStorageSizeCompletionHandler];
+      }
+    }
+    [self.channelGroup setAppSecret:self.appSecret];
 
-  // Initialize a channel unit for start service logs.
-  self.channelUnit =
-      self.channelUnit
-          ?: [self.channelGroup addChannelUnitWithConfiguration:[[MSChannelUnitConfiguration alloc]
-                                                                    initDefaultConfigurationWithGroupId:[MSAppCenter groupId]]];
+    // Initialize a channel unit for start service logs.
+    self.channelUnit =
+        self.channelUnit
+            ?: [self.channelGroup addChannelUnitWithConfiguration:[[MSChannelUnitConfiguration alloc]
+                                                                      initDefaultConfigurationWithGroupId:[MSAppCenter groupId]]];
+  }
 }
 
 - (NSString *)appSecret {
@@ -609,15 +641,17 @@ static const long kMSMinUpperSizeLimitInBytes = 24 * 1024;
 }
 
 - (void)sendStartServiceLog:(NSArray<NSString *> *)servicesNames {
-  if (self.isEnabled) {
-    MSStartServiceLog *serviceLog = [MSStartServiceLog new];
-    serviceLog.services = servicesNames;
-    [self.channelUnit enqueueItem:serviceLog flags:MSFlagsDefault];
-  } else {
-    if (self.startedServiceNames == nil) {
-      self.startedServiceNames = [NSMutableArray new];
+  @synchronized(self) {
+    if (self.isEnabled) {
+      MSStartServiceLog *serviceLog = [MSStartServiceLog new];
+      serviceLog.services = servicesNames;
+      [self.channelUnit enqueueItem:serviceLog flags:MSFlagsDefault];
+    } else {
+      if (self.startedServiceNames == nil) {
+        self.startedServiceNames = [NSMutableArray new];
+      }
+      [self.startedServiceNames addObjectsFromArray:servicesNames];
     }
-    [self.startedServiceNames addObjectsFromArray:servicesNames];
   }
 }
 

@@ -1,7 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import UIKit
 
 // 10 MiB.
 let kMSDefaultDatabaseSize = 10 * 1024 * 1024
+let acProdLogUrl = "https://in.appcenter.ms"
+let ocProdLogUrl = "https://mobile.events.data.microsoft.com"
 
 class MSMainViewController: UITableViewController, AppCenterProtocol {
   
@@ -22,18 +27,26 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
   @IBOutlet weak var logUrl: UILabel!
   @IBOutlet weak var sdkVersion: UILabel!
   @IBOutlet weak var pushEnabledSwitch: UISwitch!
+  @IBOutlet weak var authSwitch: UISwitch!
   @IBOutlet weak var logFilterSwitch: UISwitch!
   @IBOutlet weak var deviceIdLabel: UILabel!
   @IBOutlet weak var storageMaxSizeField: UITextField!
   @IBOutlet weak var storageFileSizeLabel: UILabel!
   @IBOutlet weak var userIdField: UITextField!
+  @IBOutlet weak var setLogUrlButton: UIButton!
+  @IBOutlet weak var setAppSecretButton: UIButton!
+  @IBOutlet weak var overrideCountryCodeButton: UIButton!
+  @IBOutlet weak var authInfoCell: UITableViewCell!
+  @IBOutlet weak var authInfoLabel: UILabel!
 
   var appCenter: AppCenterDelegate!
   private var startupModePicker: MSEnumPicker<StartupMode>?
   private var eventFilterStarted = false
   private var dbFileDescriptor: CInt = 0
-  private var dbFileSource: DispatchSourceProtocol?
-
+  private var dbFileSource: DispatchSourceProtocol?  
+  let startUpModeForCurrentSession: NSInteger = (UserDefaults.standard.object(forKey: kMSStartTargetKey) ?? 0) as! NSInteger
+  var userInformation: MSUserInformation?
+  
   deinit {
     self.dbFileSource?.cancel()
     close(self.dbFileDescriptor)
@@ -45,10 +58,14 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
 
     // Startup mode.
     let startupMode = UserDefaults.standard.integer(forKey: kMSStartTargetKey)
-    self.startupModePicker = MSEnumPicker<StartupMode>(
+    self.startupModePicker = MSEnumPicker<StartupMode> (
       textField: self.startupModeField,
       allValues: StartupMode.allValues,
-      onChange: {(index) in UserDefaults.standard.set(index, forKey: kMSStartTargetKey)})
+      onChange: { index in
+        UserDefaults.standard.set(index, forKey: kMSStartTargetKey)
+        UserDefaults.standard.removeObject(forKey: kMSLogUrl)
+      }
+    )
     self.startupModeField.delegate = self.startupModePicker
     self.startupModeField.text = StartupMode.allValues[startupMode].rawValue
     self.startupModeField.tintColor = UIColor.clear
@@ -80,11 +97,12 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
 
     // Miscellaneous section.
     self.installId.text = appCenter.installId()
-    self.appSecret.text = appCenter.appSecret()
-    self.logUrl.text = appCenter.logUrl()
+    self.appSecret.text = UserDefaults.standard.string(forKey: kMSAppSecret) ?? appCenter.appSecret()
+    self.logUrl.text = UserDefaults.standard.string(forKey: kMSLogUrl) ?? defaultLogUrl()
     self.sdkVersion.text = appCenter.sdkVersion()
     self.deviceIdLabel.text = UIDevice.current.identifierForVendor?.uuidString
     self.userIdField.text = UserDefaults.standard.string(forKey: kMSUserIdKey)
+    self.setAppSecretButton.isEnabled = StartupMode.allValues[startUpModeForCurrentSession] == StartupMode.OneCollector ? false : true
 
     // Make sure the UITabBarController does not cut off the last cell.
     self.edgesForExtendedLayout = []
@@ -100,9 +118,34 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
     updateViewState()
   }
 
+  @IBAction func authSignIn(_ sender: UIButton) {
+    appCenter.signIn { (userInformation, error) in
+      self.userInformation = userInformation
+      DispatchQueue.main.async {
+        self.updateViewState()
+      }
+    }
+  }
+
+  @IBAction func authSignOut(_ sender: UIButton) {
+    appCenter.signOut()
+    self.userInformation = nil
+    updateViewState()
+  }
+  
   func updateViewState() {
     self.appCenterEnabledSwitch.isOn = appCenter.isAppCenterEnabled()
     self.pushEnabledSwitch.isOn = appCenter.isPushEnabled()
+    self.authSwitch.isOn = appCenter.isAuthEnabled()
+    if (self.userInformation == nil) {
+      authInfoCell.isUserInteractionEnabled = false
+      authInfoLabel.text = "User is not authenticated"
+      authInfoLabel.isEnabled = false
+    } else {
+      authInfoCell.isUserInteractionEnabled = true
+      authInfoLabel.text = "User is authenticated"
+      authInfoLabel.isEnabled = true
+    }
     #if ACTIVE_COMPILATION_CONDITION_PUPPET
     self.logFilterSwitch.isOn = MSEventFilter.isEnabled()
     #else
@@ -118,9 +161,19 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
     updateViewState()
   }
 
+  @IBAction func authSwitchStateUpdated(_ sender: UISwitch){
+    appCenter.setAuthEnabled(sender.isOn)
+    updateViewState()
+  }
+  
   @IBAction func pushSwitchStateUpdated(_ sender: UISwitch) {
     appCenter.setPushEnabled(sender.isOn)
     updateViewState()
+  }
+    
+  @IBAction func overrideCountryCode(_ sender: UIButton) {
+    let appDelegate: AppDelegate? = UIApplication.shared.delegate as? AppDelegate
+    appDelegate?.requestLocation()
   }
 
   @IBAction func logFilterSwitchChanged(_ sender: UISwitch) {
@@ -140,12 +193,64 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
     UserDefaults.standard.set(userId, forKey: kMSUserIdKey)
     appCenter.setUserId(userId)
   }
+  
+  @IBAction func logUrlSetting(_ sender: UIButton) {
+    let alertController = UIAlertController(title: "Log Url",
+                                            message: nil,
+                                            preferredStyle:.alert)
+    alertController.addTextField { (logUrlTextField) in
+      logUrlTextField.text = UserDefaults.standard.string(forKey: kMSLogUrl) ?? self.defaultLogUrl()
+    }
+    let cancelAction = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
+    let saveAction = UIAlertAction(title: "Save", style: .default, handler: {
+      (_ action : UIAlertAction) -> Void in
+      let text = alertController.textFields?[0].text ?? ""
+      UserDefaults.standard.set(text, forKey: kMSLogUrl)
+      self.appCenter.setLogUrl(text)
+      self.logUrl.text = text
+    })
+    let resetAction = UIAlertAction(title: "Reset", style: .destructive, handler: {
+      (_ action : UIAlertAction) -> Void in
+      UserDefaults.standard.removeObject(forKey: kMSLogUrl)
+      self.appCenter.setLogUrl(self.defaultLogUrl())
+      self.logUrl.text = self.defaultLogUrl()
+    })
+    alertController.addAction(cancelAction)
+    alertController.addAction(saveAction)
+    alertController.addAction(resetAction)
+    self.present(alertController, animated: true, completion: nil)
+  }
+  
+  @IBAction func appSecretSetting(_ sender: UIButton) {
+    let alertController = UIAlertController(title: "App Secret",
+                                            message: "Please restart app after updating the appsecret",
+                                            preferredStyle:.alert)
+    alertController.addTextField { (appSecretTextField) in
+      appSecretTextField.text = UserDefaults.standard.string(forKey: kMSAppSecret) ?? self.appCenter.appSecret()
+    }
+    let cancelAction = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
+    let saveAction = UIAlertAction(title: "Save", style: .default, handler: {
+      (_ action : UIAlertAction) -> Void in
+      let text = alertController.textFields?[0].text ?? ""
+      UserDefaults.standard.set(text, forKey: kMSAppSecret)
+      self.appSecret.text = text
+    })
+    let resetAction = UIAlertAction(title: "Reset", style: .destructive, handler: {
+      (_ action : UIAlertAction) -> Void in
+      UserDefaults.standard.removeObject(forKey: kMSAppSecret)
+      self.appSecret.text = self.appCenter.appSecret()
+    })
+    alertController.addAction(cancelAction)
+    alertController.addAction(saveAction)
+    alertController.addAction(resetAction)
+    self.present(alertController, animated: true, completion: nil)
+  }
 
   @IBAction func dismissKeyboard(_ sender: UITextField!) {
     sender.resignFirstResponder()
   }
 
-  func storageMaxSizeUpdated(_ sender: UITextField) {
+  @objc func storageMaxSizeUpdated(_ sender: UITextField) {
     let maxSize = Int(sender.text ?? "0") ?? 0
     sender.text = "\(maxSize)"
     UserDefaults.standard.set(maxSize * 1024, forKey: kMSStorageMaxSizeKey)
@@ -160,13 +265,27 @@ class MSMainViewController: UITableViewController, AppCenterProtocol {
     return toolbar
   }
 
-  func doneClicked() {
+  @objc func doneClicked() {
     dismissKeyboard(self.storageMaxSizeField)
+  }
+  
+  func defaultLogUrl() -> String {
+    if StartupMode.allValues[startUpModeForCurrentSession] == StartupMode.OneCollector {
+      return ocProdLogUrl;
+    }
+    #if ACTIVE_COMPILATION_CONDITION_PUPPET
+    return kMSIntLogUrl
+    #else
+    return acProdLogUrl
+    #endif
   }
 
   override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
     if let destination = segue.destination as? AppCenterProtocol {
       destination.appCenter = appCenter
+    }
+    if let destination = segue.destination as? MSAuthInfoViewController {
+      destination.userInformation = self.userInformation
     }
   }
 }

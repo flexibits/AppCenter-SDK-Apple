@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSAnalyticsAuthenticationProviderInternal.h"
 #import "MSAnalyticsInternal.h"
 #import "MSAnalyticsPrivate.h"
@@ -184,12 +187,12 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
                                       fromApplication:YES];
 
   // When
-  [sut trackEvent:expectedName withProperties:nil flags:MSFlagsPersistenceNormal];
+  [sut trackEvent:expectedName withProperties:nil flags:MSFlagsNormal];
 
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceNormal);
+  XCTAssertEqual(actualFlags, MSFlagsNormal);
 }
 
 - (void)testTrackEventWithPropertiesWithCriticalPersistenceFlag {
@@ -222,12 +225,12 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
                                       fromApplication:YES];
 
   // When
-  [sut trackEvent:expectedName withProperties:nil flags:MSFlagsPersistenceCritical];
+  [sut trackEvent:expectedName withProperties:nil flags:MSFlagsCritical];
 
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceCritical);
+  XCTAssertEqual(actualFlags, MSFlagsCritical);
 }
 
 - (void)testTrackEventWithPropertiesWithInvalidFlag {
@@ -265,7 +268,7 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceNormal);
+  XCTAssertEqual(actualFlags, MSFlagsNormal);
 }
 
 - (void)testTrackEventWithTypedPropertiesWithNormalPersistenceFlag {
@@ -298,12 +301,12 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
                                       fromApplication:YES];
 
   // When
-  [sut trackEvent:expectedName withTypedProperties:nil flags:MSFlagsPersistenceNormal];
+  [sut trackEvent:expectedName withTypedProperties:nil flags:MSFlagsNormal];
 
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceNormal);
+  XCTAssertEqual(actualFlags, MSFlagsNormal);
 }
 
 - (void)testTrackEventWithTypedPropertiesWithCriticalPersistenceFlag {
@@ -336,12 +339,12 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
                                       fromApplication:YES];
 
   // When
-  [sut trackEvent:expectedName withTypedProperties:nil flags:MSFlagsPersistenceCritical];
+  [sut trackEvent:expectedName withTypedProperties:nil flags:MSFlagsCritical];
 
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceCritical);
+  XCTAssertEqual(actualFlags, MSFlagsCritical);
 }
 
 - (void)testTrackEventWithTypedPropertiesWithInvalidFlag {
@@ -379,7 +382,7 @@ static NSString *const kMSTestTransmissionToken2 = @"TestTransmissionToken2";
   // Then
   XCTAssertEqual(actualType, kMSTypeEvent);
   XCTAssertEqual(actualName, expectedName);
-  XCTAssertEqual(actualFlags, MSFlagsPersistenceNormal);
+  XCTAssertEqual(actualFlags, MSFlagsNormal);
 }
 
 - (void)testTrackEventSetsUserIdForDefaultTransmissionTarget {

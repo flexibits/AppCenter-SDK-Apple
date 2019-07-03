@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSChannelUnitConfiguration.h"
@@ -18,7 +21,7 @@
   MSPriority priority = MSPriorityDefault;
   NSUInteger batchSizeLimit = 10;
   NSUInteger pendingBatchesLimit = 20;
-  float flushInterval = 9.9f;
+  NSUInteger flushInterval = 9;
 
   // When
   MSChannelUnitConfiguration *sut = [[MSChannelUnitConfiguration alloc] initWithGroupId:groupId
@@ -33,7 +36,7 @@
   XCTAssertTrue(sut.priority == priority);
   assertThatUnsignedInteger(sut.batchSizeLimit, equalToUnsignedInteger(batchSizeLimit));
   assertThatUnsignedInteger(sut.pendingBatchesLimit, equalToUnsignedInteger(pendingBatchesLimit));
-  assertThatFloat(sut.flushInterval, equalToFloat(flushInterval));
+  assertThatUnsignedInteger(sut.flushInterval, equalToUnsignedInteger(flushInterval));
 }
 
 - (void)testNewInstanceWithDefaultSettings {
@@ -50,7 +53,7 @@
   XCTAssertTrue(sut.priority == MSPriorityDefault);
   assertThatUnsignedInteger(sut.batchSizeLimit, equalToUnsignedInteger(50));
   assertThatUnsignedInteger(sut.pendingBatchesLimit, equalToUnsignedInteger(3));
-  assertThatFloat(sut.flushInterval, equalToFloat(3));
+  assertThatUnsignedInteger(sut.flushInterval, equalToUnsignedInteger(3));
 }
 
 @end

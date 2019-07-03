@@ -1,6 +1,9 @@
-#import "MSAnalytics.h"
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSAnalytics+Validation.h"
 #import "MSAnalyticsCategory.h"
+#import "MSAnalyticsConstants.h"
 #import "MSAnalyticsPrivate.h"
 #import "MSAnalyticsTransmissionTargetInternal.h"
 #import "MSChannelGroupProtocol.h"
@@ -11,7 +14,6 @@
 #import "MSEventProperties.h"
 #import "MSEventPropertiesInternal.h"
 #import "MSPageLog.h"
-#import "MSServiceAbstractProtected.h"
 #import "MSSessionContext.h"
 #import "MSStringTypedProperty.h"
 #import "MSTypedProperty.h"
@@ -21,7 +23,7 @@
 // Service name for initialization.
 static NSString *const kMSServiceName = @"Analytics";
 
-// The group Id for storage.
+// The group Id for Analytics.
 static NSString *const kMSGroupId = @"Analytics";
 
 // Singleton
@@ -48,13 +50,11 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
 
     // Set defaults.
     _autoPageTrackingEnabled = NO;
+    _flushInterval = kMSFlushIntervalDefault;
 
     // Init session tracker.
     _sessionTracker = [[MSSessionTracker alloc] init];
     _sessionTracker.delegate = self;
-
-    // Init channel configuration.
-    _channelUnitConfiguration = [[MSChannelUnitConfiguration alloc] initDefaultConfigurationWithGroupId:[self groupId]];
 
     // Set up transmission target dictionary.
     _transmissionTargets = [NSMutableDictionary<NSString *, MSAnalyticsTransmissionTarget *> new];
@@ -81,6 +81,10 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
                     appSecret:(nullable NSString *)appSecret
       transmissionTargetToken:(nullable NSString *)token
               fromApplication:(BOOL)fromApplication {
+
+  // Init channel configuration.
+  self.channelUnitConfiguration = [[MSChannelUnitConfiguration alloc] initDefaultConfigurationWithGroupId:[self groupId]
+                                                                                            flushInterval:self.flushInterval];
   [super startWithChannelGroup:channelGroup appSecret:appSecret transmissionTargetToken:token fromApplication:fromApplication];
   if (token) {
 
@@ -90,6 +94,12 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
      */
     self.defaultTransmissionTarget = [self createTransmissionTargetForToken:token];
   }
+
+  // Add extra channel for critical events.
+  NSString *criticalGroupId = [NSString stringWithFormat:@"%@_%@", kMSGroupId, kMSCriticalChannelSuffix];
+  MSChannelUnitConfiguration *channelUnitConfiguration =
+      [[MSChannelUnitConfiguration alloc] initDefaultConfigurationWithGroupId:criticalGroupId];
+  self.criticalChannelUnit = [self.channelGroup addChannelUnitWithConfiguration:channelUnitConfiguration];
 
   // Set up swizzling for auto page tracking.
   [MSAnalyticsCategory activateCategory];
@@ -117,6 +127,7 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
 
 - (void)applyEnabledState:(BOOL)isEnabled {
   [super applyEnabledState:isEnabled];
+  [self.criticalChannelUnit setEnabled:isEnabled andDeleteDataOnDisabled:YES];
   if (isEnabled) {
     if (self.startedFromApplication) {
       [self resume];
@@ -196,25 +207,14 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
            withProperties:(nullable NSDictionary<NSString *, NSString *> *)properties
     forTransmissionTarget:(nullable MSAnalyticsTransmissionTarget *)transmissionTarget
                     flags:(MSFlags)flags {
-  @synchronized(self) {
-    if ([[MSAnalytics sharedInstance] canBeUsed]) {
-      [[MSAnalytics sharedInstance] trackEvent:eventName withProperties:properties forTransmissionTarget:transmissionTarget flags:flags];
-    }
-  }
+  [[MSAnalytics sharedInstance] trackEvent:eventName withProperties:properties forTransmissionTarget:transmissionTarget flags:flags];
 }
 
 + (void)trackEvent:(NSString *)eventName
       withTypedProperties:(nullable MSEventProperties *)properties
     forTransmissionTarget:(nullable MSAnalyticsTransmissionTarget *)transmissionTarget
                     flags:(MSFlags)flags {
-  @synchronized(self) {
-    if ([[MSAnalytics sharedInstance] canBeUsed]) {
-      [[MSAnalytics sharedInstance] trackEvent:eventName
-                           withTypedProperties:properties
-                         forTransmissionTarget:transmissionTarget
-                                         flags:flags];
-    }
-  }
+  [[MSAnalytics sharedInstance] trackEvent:eventName withTypedProperties:properties forTransmissionTarget:transmissionTarget flags:flags];
 }
 
 + (void)trackPage:(NSString *)pageName {
@@ -222,39 +222,27 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
 }
 
 + (void)trackPage:(NSString *)pageName withProperties:(nullable NSDictionary<NSString *, NSString *> *)properties {
-  @synchronized(self) {
-    if ([[MSAnalytics sharedInstance] canBeUsed]) {
-      [[MSAnalytics sharedInstance] trackPage:pageName withProperties:properties];
-    }
-  }
+  [[MSAnalytics sharedInstance] trackPage:pageName withProperties:properties];
 }
 
 + (void)pause {
-  @synchronized(self) {
-    if ([[MSAnalytics sharedInstance] canBeUsed]) {
-      [[MSAnalytics sharedInstance] pause];
-    }
-  }
+  [[MSAnalytics sharedInstance] pause];
 }
 
 + (void)resume {
-  @synchronized(self) {
-    if ([[MSAnalytics sharedInstance] canBeUsed]) {
-      [[MSAnalytics sharedInstance] resume];
-    }
-  }
+  [[MSAnalytics sharedInstance] resume];
 }
 
 + (void)setAutoPageTrackingEnabled:(BOOL)isEnabled {
-  @synchronized(self) {
-    [[MSAnalytics sharedInstance] setAutoPageTrackingEnabled:isEnabled];
-  }
+  [MSAnalytics sharedInstance].autoPageTrackingEnabled = isEnabled;
 }
 
 + (BOOL)isAutoPageTrackingEnabled {
-  @synchronized(self) {
-    return [[MSAnalytics sharedInstance] isAutoPageTrackingEnabled];
-  }
+  return [MSAnalytics sharedInstance].autoPageTrackingEnabled;
+}
+
++ (void)setTransmissionInterval:(NSUInteger)interval {
+  [[MSAnalytics sharedInstance] setTransmissionInterval:interval];
 }
 
 #pragma mark - Transmission Target
@@ -286,57 +274,68 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
       withTypedProperties:(MSEventProperties *)properties
     forTransmissionTarget:(MSAnalyticsTransmissionTarget *)transmissionTarget
                     flags:(MSFlags)flags {
-  if (![self isEnabled]) {
-    return;
-  }
-
-  // Use default transmission target if no transmission target was provided.
-  if (transmissionTarget == nil) {
-    transmissionTarget = self.defaultTransmissionTarget;
-  }
-
-  // Validate flags.
-  MSFlags persistenceFlag = flags & kMSPersistenceFlagsMask;
-  if (persistenceFlag != MSFlagsPersistenceNormal && persistenceFlag != MSFlagsPersistenceCritical) {
-    MSLogWarning([MSAnalytics logTag], @"Invalid flags (%u) received, using normal as a default.", (unsigned int)persistenceFlag);
-    persistenceFlag = MSFlagsPersistenceNormal;
-  }
-
-  // Create an event log.
-  MSEventLog *log = [MSEventLog new];
-
-  // Add transmission target token.
-  if (transmissionTarget) {
-    if (transmissionTarget.isEnabled) {
-      [log addTransmissionTargetToken:[transmissionTarget transmissionTargetToken]];
-      log.tag = transmissionTarget;
-      if (transmissionTarget == self.defaultTransmissionTarget) {
-        log.userId = [[MSUserIdContext sharedInstance] userId];
-      }
-    } else {
-      MSLogError([MSAnalytics logTag], @"This transmission target is disabled.");
+  @synchronized(self) {
+    if (![self canBeUsed] || ![self isEnabled]) {
       return;
     }
-  }
 
-  // Set properties of the event log.
-  log.name = eventName;
-  log.eventId = MS_UUID_STRING;
-  if (!self.defaultTransmissionTarget) {
-    properties = [self validateAppCenterEventProperties:properties];
-  }
-  log.typedProperties = [properties isEmpty] ? nil : properties;
+    // Use default transmission target if no transmission target was provided.
+    if (transmissionTarget == nil) {
+      transmissionTarget = self.defaultTransmissionTarget;
+    }
 
-  // Send log to channel.
-  [self sendLog:log flags:persistenceFlag];
+    // Validate flags.
+    MSFlags persistenceFlag = flags & kMSPersistenceFlagsMask;
+    if (persistenceFlag != MSFlagsNormal && persistenceFlag != MSFlagsCritical) {
+      MSLogWarning([MSAnalytics logTag], @"Invalid flags (%u) received, using normal as a default.", (unsigned int)persistenceFlag);
+      persistenceFlag = MSFlagsNormal;
+    }
+
+    // Create an event log.
+    MSEventLog *log = [MSEventLog new];
+
+    // Add transmission target token.
+    if (transmissionTarget) {
+      if (transmissionTarget.isEnabled) {
+        [log addTransmissionTargetToken:[transmissionTarget transmissionTargetToken]];
+        log.tag = transmissionTarget;
+        if (transmissionTarget == self.defaultTransmissionTarget) {
+          log.userId = [[MSUserIdContext sharedInstance] userId];
+        }
+      } else {
+        MSLogError([MSAnalytics logTag], @"This transmission target is disabled.");
+        return;
+      }
+    } else {
+      properties = [self validateAppCenterEventProperties:properties];
+    }
+
+    // Set properties of the event log.
+    log.name = eventName;
+    log.eventId = MS_UUID_STRING;
+    log.typedProperties = [properties isEmpty] ? nil : properties;
+
+    // Send log to channel.
+    [self sendLog:log flags:persistenceFlag];
+  }
 }
 
 - (void)pause {
-  [self.channelUnit pauseWithIdentifyingObject:self];
+  @synchronized(self) {
+    if ([self canBeUsed]) {
+      [self.channelUnit pauseWithIdentifyingObject:self];
+      [self.criticalChannelUnit pauseWithIdentifyingObject:self];
+    }
+  }
 }
 
 - (void)resume {
-  [self.channelUnit resumeWithIdentifyingObject:self];
+  @synchronized(self) {
+    if ([self canBeUsed]) {
+      [self.channelUnit resumeWithIdentifyingObject:self];
+      [self.criticalChannelUnit resumeWithIdentifyingObject:self];
+    }
+  }
 }
 
 - (NSDictionary<NSString *, NSString *> *)removeInvalidProperties:(NSDictionary<NSString *, NSString *> *)properties {
@@ -364,35 +363,46 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
 }
 
 - (void)trackPage:(NSString *)pageName withProperties:(NSDictionary<NSString *, NSString *> *)properties {
-  if (![self isEnabled]) {
-    return;
+  @synchronized(self) {
+    if (![self canBeUsed] || ![self isEnabled]) {
+      return;
+    }
+
+    // Create an event log.
+    MSPageLog *log = [MSPageLog new];
+
+    // Set properties of the event log.
+    log.name = pageName;
+    if (properties && properties.count > 0) {
+      log.properties = [self removeInvalidProperties:properties];
+    }
+
+    // Send log to log manager.
+    [self sendLog:log flags:MSFlagsDefault];
   }
-
-  // Create an event log.
-  MSPageLog *log = [MSPageLog new];
-
-  // Set properties of the event log.
-  log.name = pageName;
-  if (properties && properties.count > 0) {
-    log.properties = [self removeInvalidProperties:properties];
-  }
-
-  // Send log to log manager.
-  [self sendLog:log flags:MSFlagsDefault];
-}
-
-- (void)setAutoPageTrackingEnabled:(BOOL)isEnabled {
-  _autoPageTrackingEnabled = isEnabled;
-}
-
-- (BOOL)isAutoPageTrackingEnabled {
-  return self.autoPageTrackingEnabled;
 }
 
 - (void)sendLog:(id<MSLog>)log flags:(MSFlags)flags {
+  if ((flags & MSFlagsCritical) != 0) {
+    [self.criticalChannelUnit enqueueItem:log flags:flags];
+  } else {
+    [self.channelUnit enqueueItem:log flags:flags];
+  }
+}
 
-  // Send log to log manager.
-  [self.channelUnit enqueueItem:log flags:flags];
+- (void)setTransmissionInterval:(NSUInteger)interval {
+  if (self.started) {
+    MSLogError([MSAnalytics logTag], @"The transmission interval should be set before the MSAnalytics service is started.");
+    return;
+  }
+  if (interval > kMSFlushIntervalMaximum || interval < kMSFlushIntervalMinimum) {
+    MSLogError(
+        [MSAnalytics logTag], @"The transmission interval is not valid, it should be between %u second(s) and %u second(s) (%u day).",
+        (unsigned int)kMSFlushIntervalMinimum, (unsigned int)kMSFlushIntervalMaximum, (unsigned int)(kMSFlushIntervalMaximum / 86400));
+    return;
+  }
+  self.flushInterval = interval;
+  MSLogDebug([MSAnalytics logTag], @"Transmission interval set to %u second(s)", (unsigned int)interval);
 }
 
 - (MSAnalyticsTransmissionTarget *)transmissionTargetForToken:(NSString *)transmissionTargetToken {
@@ -421,15 +431,13 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
 }
 
 - (void)pauseTransmissionTargetForToken:(NSString *)token {
-  if (self.oneCollectorChannelUnit) {
-    [self.oneCollectorChannelUnit pauseSendingLogsWithToken:token];
-  }
+  [self.oneCollectorChannelUnit pauseSendingLogsWithToken:token];
+  [self.oneCollectorCriticalChannelUnit pauseSendingLogsWithToken:token];
 }
 
 - (void)resumeTransmissionTargetForToken:(NSString *)token {
-  if (self.oneCollectorChannelUnit) {
-    [self.oneCollectorChannelUnit resumeSendingLogsWithToken:token];
-  }
+  [self.oneCollectorChannelUnit resumeSendingLogsWithToken:token];
+  [self.oneCollectorCriticalChannelUnit resumeSendingLogsWithToken:token];
 }
 
 - (id<MSChannelUnitProtocol>)oneCollectorChannelUnit {
@@ -438,6 +446,15 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
     self.oneCollectorChannelUnit = [self.channelGroup channelUnitForGroupId:oneCollectorGroupId];
   }
   return _oneCollectorChannelUnit;
+}
+
+- (id<MSChannelUnitProtocol>)oneCollectorCriticalChannelUnit {
+  if (!_oneCollectorCriticalChannelUnit) {
+    NSString *oneCollectorCriticalGroupId =
+        [NSString stringWithFormat:@"%@_%@%@", self.groupId, kMSCriticalChannelSuffix, kMSOneCollectorGroupIdSuffix];
+    self.oneCollectorCriticalChannelUnit = [self.channelGroup channelUnitForGroupId:oneCollectorCriticalGroupId];
+  }
+  return _oneCollectorCriticalChannelUnit;
 }
 
 + (void)resetSharedInstance {
@@ -466,12 +483,13 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
     return;
   }
   NSObject *logObject = (NSObject *)log;
-  if ([logObject isKindOfClass:[MSEventLog class]] && [self.delegate respondsToSelector:@selector(analytics:willSendEventLog:)]) {
+  id<MSAnalyticsDelegate> delegate = self.delegate;
+  if ([logObject isKindOfClass:[MSEventLog class]] && [delegate respondsToSelector:@selector(analytics:willSendEventLog:)]) {
     MSEventLog *eventLog = (MSEventLog *)log;
-    [self.delegate analytics:self willSendEventLog:eventLog];
-  } else if ([logObject isKindOfClass:[MSPageLog class]] && [self.delegate respondsToSelector:@selector(analytics:willSendPageLog:)]) {
+    [delegate analytics:self willSendEventLog:eventLog];
+  } else if ([logObject isKindOfClass:[MSPageLog class]] && [delegate respondsToSelector:@selector(analytics:willSendPageLog:)]) {
     MSPageLog *pageLog = (MSPageLog *)log;
-    [self.delegate analytics:self willSendPageLog:pageLog];
+    [delegate analytics:self willSendPageLog:pageLog];
   }
 }
 
@@ -497,14 +515,15 @@ __attribute__((used)) static void importCategories() { [NSString stringWithForma
     return;
   }
   NSObject *logObject = (NSObject *)log;
-  if ([logObject isKindOfClass:[MSEventLog class]] && [self.delegate respondsToSelector:@selector(analytics:
-                                                                                            didFailSendingEventLog:withError:)]) {
+  id<MSAnalyticsDelegate> delegate = self.delegate;
+  if ([logObject isKindOfClass:[MSEventLog class]] && [delegate respondsToSelector:@selector(analytics:
+                                                                                       didFailSendingEventLog:withError:)]) {
     MSEventLog *eventLog = (MSEventLog *)log;
-    [self.delegate analytics:self didFailSendingEventLog:eventLog withError:error];
-  } else if ([logObject isKindOfClass:[MSPageLog class]] && [self.delegate respondsToSelector:@selector(analytics:
-                                                                                                  didFailSendingPageLog:withError:)]) {
+    [delegate analytics:self didFailSendingEventLog:eventLog withError:error];
+  } else if ([logObject isKindOfClass:[MSPageLog class]] && [delegate respondsToSelector:@selector(analytics:
+                                                                                             didFailSendingPageLog:withError:)]) {
     MSPageLog *pageLog = (MSPageLog *)log;
-    [self.delegate analytics:self didFailSendingPageLog:pageLog withError:error];
+    [delegate analytics:self didFailSendingPageLog:pageLog withError:error];
   }
 }
 

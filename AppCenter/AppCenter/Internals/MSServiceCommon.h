@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSConstants.h"
@@ -22,6 +25,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly, getter=isAvailable) BOOL available;
 
 /**
+ * Flag indicating if a service is enabled or not.
+ */
+@property(nonatomic, getter=isEnabled) BOOL enabled;
+
+/**
  * Channel group.
  */
 @property(nonatomic) id<MSChannelGroupProtocol> channelGroup;
@@ -41,13 +49,6 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @property(nonatomic, nonnull) NSString *defaultTransmissionTargetToken;
 
-/**
- * Apply the enabled state to the service.
- *
- * @param isEnabled A boolean value set to YES to enable the service or NO otherwise.
- */
-- (void)applyEnabledState:(BOOL)isEnabled;
-
 @optional
 
 /**
@@ -61,19 +62,21 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * The channel configuration for this service.
  */
-@property(nonatomic, readonly) MSChannelUnitConfiguration *channelUnitConfiguration;
+@property(nonatomic) MSChannelUnitConfiguration *channelUnitConfiguration;
+
+@required
+
+/**
+ * Apply the enabled state to the service.
+ *
+ * @param isEnabled A boolean value set to YES to enable the service or NO otherwise.
+ */
+- (void)applyEnabledState:(BOOL)isEnabled;
 
 /**
  * The initialization priority for this service.
  */
 @property(nonatomic, readonly) MSInitializationPriority initializationPriority;
-
-/**
- * Get the unique instance.
- *
- * @return unique instance.
- */
-+ (instancetype)sharedInstance;
 
 /**
  * Check if the SDK has been properly initialized and the service can be used. Logs an error in case it wasn't.
@@ -123,6 +126,15 @@ NS_ASSUME_NONNULL_BEGIN
  * @return `YES` if the service is started from an application, `NO` otherwise.
  */
 - (BOOL)isStartedFromApplication;
+
+@optional
+
+/**
+ * Get the unique instance.
+ *
+ * @return unique instance.
+ */
++ (instancetype)sharedInstance;
 
 @end
 

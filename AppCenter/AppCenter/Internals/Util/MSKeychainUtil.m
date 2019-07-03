@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSKeychainUtilPrivate.h"
@@ -18,6 +21,12 @@ static NSString *AppCenterKeychainServiceName(NSString *suffix) {
   NSMutableDictionary *attributes = [MSKeychainUtil generateItem:key withServiceName:serviceName];
   attributes[(__bridge id)kSecValueData] = [string dataUsingEncoding:NSUTF8StringEncoding];
   OSStatus status = [self addSecItem:attributes];
+
+  // Delete item if already exists.
+  if (status == errSecDuplicateItem) {
+    [self deleteSecItem:attributes];
+    status = [self addSecItem:attributes];
+  }
   return status == noErr;
 }
 

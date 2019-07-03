@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
 help() {
   echo "Usage: $0 {internal|external} -a <azure-storage-account> -k <azure-storage-access-key> -t <github-access-token>"
 }
@@ -54,10 +57,21 @@ REQUEST_UPLOAD_URL_TEMPLATE="$(printf $GITHUB_API_URL_TEMPLATE $GITHUB_UPLOAD_HO
 publish_version="$(grep "VERSION_STRING" $VERSION_FILENAME | head -1 | awk -F "[= ]" '{print $4}')"
 echo "Publish version:" $publish_version
 
+# Read publish version for current build
+version=$(cat $CURRENT_BUILD_VERSION_FILENAME)
+
+# Exit if response doesn't contain a version
+if [ -z $version ] || [ "$version" == "" ]; then
+  echo "Cannot retrieve the latest version"
+  echo "Response:" $version
+  exit 1
+fi
+echo "Found publish version for the build: $version"
+
 if [ "$mode" == "internal" ]; then
 
   ## Change publish version to internal version
-  publish_version=$SDK_PUBLISH_VERSION
+  publish_version=$version
   echo "Detected internal release. Publish version is updated to " $publish_version
 
 else
@@ -165,13 +179,14 @@ fi
 
 ## V. Upload binary
 echo "Upload binaries"
+azure telemetry --disable
 if [ "$mode" == "internal" ]; then
 
   # Determine the filename for the release
   filename=$(echo $FRAMEWORKS_ZIP_FILENAME | sed 's/.zip/-'${publish_version}'+'$BUILD_SOURCEVERSION'.zip/g')
 
   # Replace the latest binary in Azure Storage
-  echo "Y" | azure storage blob upload $FRAMEWORKS_ZIP_FILENAME sdk
+  echo "Y" | azure storage blob upload $FRAMEWORKS_ZIP_FILENAME sdk --verbose
 
   # Upload binary to Azure Storage
   mv $FRAMEWORKS_ZIP_FILENAME $filename

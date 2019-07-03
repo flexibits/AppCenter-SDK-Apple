@@ -1,5 +1,73 @@
 # App Center SDK for iOS and macOS Change Log
 
+## Version 2.1.0
+
+### AppCenter
+
+* **[Fix]** Remove Keychain permission pop-up on macOS.
+* **[Fix]** Improve encryption security.
+
+### AppCenterAnalytics
+
+* **[Feature]** Support setting latency of sending events via `[MSAnalytics setTransmissionInterval:]`.
+
+### AppCenterAuth
+
+* **[Feature]** Expose the ID Token and Access Token JWTs in the `MSUserInformation` object passed to the sign in callback.
+* **[Fix]** Fix changing signing status may cause logs (e.g., events) to be delayed.
+* **[Fix]** Validate custom URL scheme before starting Auth and log an error message when it is invalid.
+* **[Fix]** Fix rare condition where a user is prompted again for their credentials instead of refreshing the token silently.
+
+### AppCenterData
+
+* **[Fix]** Fix an issue where invalid characters in the document ID are accepted at creation time but causing errors while trying to read or delete the document. The characters are `#`, `\`, `/`, `?`, and all whitespaces.
+
+___
+
+## Version 2.0.1
+
+Version 2.0.1 of the App Center SDK includes two new modules: Auth and Data. This version has a **breaking change**, it only supports Xcode 10.0.0+.
+
+### AppCenterAuth
+
+App Center Auth is a cloud-based identity management service that enables you to authenticate users and manage their identities. You can also leverage user identities in other App Center services. **iOS only, not available for macOS*.
+
+### AppCenterData
+
+The App Center Data service provides functionality enabling developers to persist app data in the cloud in both online and offline scenarios. This enables you to store and manage both user-specific data as well as data shared between users and across platforms. **iOS only, not available for macOS*.
+
+### AppCenterCrashes
+
+* **[Feature]** After calling `[MSAuth signInWithCompletionHandler:]`, the next crashes are associated with an `accountId` corresponding to the signed in user. This is a different field than the `userId` set by `[MSAppCenter setUserId:]`. Calling `[MSAuth signOut]` stops the `accountId` association for the next crashes.
+* **[Fix]** Print an error and return immediately when calling `[MSCrashes notifyWithUserConfirmation:]` with confirmation handlers not implemented.
+
+### AppCenterDistribute
+
+* **[Fix]** Starting the application with "Guided Access" enabled blocks the update flow since in-app update is not possible in this mode.
+
+### AppCenterPush
+
+* **[Feature]** After calling `[MSAuth signInWithCompletionHandler:]`, the push installation is associated to the signed in user with an `accountId` and can be pushed by using the `accountId` audience. This is a different field than the `userId` set by `[MSAppCenter setUserId:]`. The push installation is also updated on calling `[MSAuth signOut]` to stop the association.
+* **[Fix]** Fix updating push installation when setting the user identifier via  `[MSAppCenter setUserId:]`.
+
+___
+
+## Version 1.14.0
+
+### AppCenter
+
+* **[Fix]** Fix a crash in case decrypting a value failed.
+
+### AppCenterAnalytics
+
+* **[Feature]** Preparation work for a future change in transmission protocol and endpoint for Analytics data on macOS. There is no impact on your current workflow when using App Center.
+
+### AppCenterPush
+
+* **[Fix]** Fix crash on invoking an optional push callback when it isn't implemented in the push delegate.
+
+___
+
 ## Version 1.13.2
 
 ### AppCenter
@@ -17,6 +85,7 @@ ___
 ### AppCenter
 
 * **[Fix]** Fix a possible deadlock if the SDK is started from a background thread.
+* **[Feature]** Add class method  `+ [MSAppCenter setCountryCode:]` that allows manually setting the country code on platforms where there is no carrier information available.
 
 ___
 
@@ -300,7 +369,7 @@ This version contains a bug fix and improvements.
 
 ### AppCenterDistribute
 
-* **[Improvement]** Add Portuguese to supported languages, see [this folder](https://github.com/Microsoft/AppCenter-SDK-Apple/tree/develop/AppCenterDistribute/AppCenterDistribute/Resources) for a list of supported languages.
+* **[Improvement]** Add Portuguese to supported languages, see [this folder](https://github.com/microsoft/appcenter-sdk-apple/tree/develop/AppCenterDistribute/AppCenterDistribute/Resources) for a list of supported languages.
 * **[Improvement]** Users with app versions that still use Mobile Center can directly upgrade to versions that use this version of App Center, without the need to reinstall.
 
 ___

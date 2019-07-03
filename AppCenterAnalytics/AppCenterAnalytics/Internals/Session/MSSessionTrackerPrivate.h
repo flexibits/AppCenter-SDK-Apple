@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSSessionContext.h"
 #import "MSSessionTracker.h"
 
@@ -11,7 +14,7 @@
 /**
  * Flag to indicate if session tracking has started or not.
  */
-@property(nonatomic) BOOL started;
+@property(nonatomic, getter=isStarted) BOOL started;
 
 /**
  *  Renew session Id.

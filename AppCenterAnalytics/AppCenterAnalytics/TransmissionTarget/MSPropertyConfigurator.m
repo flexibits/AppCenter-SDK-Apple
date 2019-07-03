@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #if TARGET_OS_OSX
@@ -155,25 +158,23 @@ static const char deviceIdPrefix = 'i';
 + (NSString *)getDeviceIdentifier {
   NSString *baseIdentifier;
 #if TARGET_OS_OSX
-  /*
-   * TODO: Uncomment this for macOS support.
-   * io_service_t platformExpert = IOServiceGetMatchingService(
-   *    kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
-   * CFStringRef platformUUIDAsCFString = NULL;
-   * if (platformExpert) {
-   *  platformUUIDAsCFString = (CFStringRef)IORegistryEntryCreateCFProperty(
-   *      platformExpert, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
-   *  IOObjectRelease(platformExpert);
-   * }
-   * NSString *platformUUIDAsNSString = nil;
-   * if (platformUUIDAsCFString) {
-   *   platformUUIDAsNSString =
-   *    [NSString stringWithString:(__bridge NSString *)platformUUIDAsCFString];
-   *   CFRelease(platformUUIDAsCFString);
-   * }
-   * baseIdentifier = platformUUIDAsNSString;
-   */
-  baseIdentifier = @"";
+
+  io_service_t platformExpert = IOServiceGetMatchingService(
+    kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+  CFStringRef platformUUIDAsCFString = NULL;
+  if (platformExpert) {
+    platformUUIDAsCFString = (CFStringRef)IORegistryEntryCreateCFProperty(
+      platformExpert, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+    IOObjectRelease(platformExpert);
+  }
+  NSString *platformUUIDAsNSString = nil;
+  if (platformUUIDAsCFString) {
+    platformUUIDAsNSString =
+    [NSString stringWithString:(__bridge NSString *)platformUUIDAsCFString];
+    CFRelease(platformUUIDAsCFString);
+  }
+  baseIdentifier = platformUUIDAsNSString;
+
 #else
   baseIdentifier = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
 #endif

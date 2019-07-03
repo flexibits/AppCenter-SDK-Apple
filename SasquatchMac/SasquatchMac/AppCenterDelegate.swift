@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import AppCenter
 
 /**
@@ -13,9 +16,11 @@ import AppCenter
   func setCustomProperties(_ customProperties: MSCustomProperties)
   func installId() -> String
   func appSecret() -> String
-  func logUrl() -> String
   func isDebuggerAttached() -> Bool
+  func startAnalyticsFromLibrary()
   func setUserId(_ userId: String?)
+  func setLogUrl(_ logUrl: String?)
+  func setCountryCode(_ countryCode: String?)
 
   // Modules section.
   func isAnalyticsEnabled() -> Bool
@@ -28,8 +33,13 @@ import AppCenter
   // MSAnalytics section.
   func trackEvent(_ eventName: String)
   func trackEvent(_ eventName: String, withProperties: Dictionary<String, String>)
+  func trackEvent(_ eventName: String, withProperties: Dictionary<String, String>, flags: MSFlags)
+  func trackEvent(_ eventName: String, withTypedProperties: MSEventProperties)
+  func trackEvent(_ eventName: String, withTypedProperties: MSEventProperties?, flags: MSFlags)
   func trackPage(_ pageName: String)
   func trackPage(_ pageName: String, withProperties: Dictionary<String, String>)
+  func resume()
+  func pause()
 
   // MSCrashes section.
   func hasCrashedInLastSession() -> Bool

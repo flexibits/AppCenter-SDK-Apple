@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+#import <CoreLocation/CoreLocation.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <Photos/Photos.h>
 #import <UserNotifications/UserNotifications.h>
@@ -10,22 +14,22 @@
 #if GCC_PREPROCESSOR_MACRO_PUPPET
 #import "AppCenter.h"
 #import "AppCenterAnalytics.h"
+#import "AppCenterAuth.h"
 #import "AppCenterCrashes.h"
+#import "AppCenterData.h"
 #import "AppCenterDistribute.h"
 #import "AppCenterPush.h"
 
 // Internal ones
 #import "MSAnalyticsInternal.h"
-
-#define APP_SECRET_VALUE "7dfb022a-17b5-4d4a-9c75-12bc3ef5e6b7"
 #else
 @import AppCenter;
 @import AppCenterAnalytics;
 @import AppCenterCrashes;
+@import AppCenterData;
 @import AppCenterDistribute;
+@import AppCenterAuth;
 @import AppCenterPush;
-
-#define APP_SECRET_VALUE "3ccfe7f5-ec01-4de5-883c-f563bbbe147a"
 #endif
 
 enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
@@ -34,18 +38,20 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
 #if GCC_PREPROCESSOR_MACRO_PUPPET
     MSAnalyticsDelegate,
 #endif
-    MSCrashesDelegate, MSDistributeDelegate, MSPushDelegate, UNUserNotificationCenterDelegate>
+    MSCrashesDelegate, MSDistributeDelegate, MSPushDelegate, MSRemoteOperationDelegate, UNUserNotificationCenterDelegate,
+    CLLocationManagerDelegate>
 
 @property(nonatomic) MSAnalyticsResult *analyticsResult;
 @property(nonatomic) API_AVAILABLE(ios(10.0)) void (^notificationPresentationCompletionHandler)(UNNotificationPresentationOptions options);
 @property(nonatomic) void (^notificationResponseCompletionHandler)(void);
+@property(nonatomic) CLLocationManager *locationManager;
 
 @end
 
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-
+  [MSAppCenter setLogLevel:MSLogLevelVerbose];
 #if GCC_PREPROCESSOR_MACRO_PUPPET
   self.analyticsResult = [MSAnalyticsResult new];
   [MSAnalytics setDelegate:self];
@@ -55,18 +61,23 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
       [(MSAnalyticsViewController *)controller setAnalyticsResult:self.analyticsResult];
     }
   }
+  [MSAppCenter setLogUrl:kMSIntLogUrl];
+  [MSAuth setConfigUrl:kMSIntConfigUrl];
+  [MSData setTokenExchangeUrl:kMSIntTokenExchangeUrl];
+  [MSDistribute setApiUrl:kMSIntApiUrl];
+  [MSDistribute setInstallUrl:kMSIntInstallUrl];
 #endif
 
 // Customize App Center SDK.
 #pragma clang diagnostic ignored "-Wpartial-availability"
-  if ([[NSProcessInfo processInfo] operatingSystemVersion].majorVersion >= 10) {
+  if (@available(iOS 10.0, *)) {
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
   }
 #pragma clang diagnostic pop
   [MSPush setDelegate:self];
   [MSDistribute setDelegate:self];
-  [MSAppCenter setLogLevel:MSLogLevelVerbose];
+  [MSData setRemoteOperationDelegate:self];
 
   // Set max storage size.
   NSNumber *storageMaxSize = [[NSUserDefaults standardUserDefaults] objectForKey:kMSStorageMaxSizeKey];
@@ -95,23 +106,43 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
                  }];
   }
 
+  NSString *logUrl = [[NSUserDefaults standardUserDefaults] objectForKey:kMSLogUrl];
+  if (logUrl) {
+    [MSAppCenter setLogUrl:logUrl];
+  }
+  int latencyTimeValue = [[[NSUserDefaults standardUserDefaults] objectForKey:kMSTransmissionIterval] intValue];
+  if (latencyTimeValue) {
+    [MSAnalytics setTransmissionInterval:latencyTimeValue];
+  }
   // Start App Center SDK.
-  NSArray<Class> *services = @ [[MSAnalytics class], [MSCrashes class], [MSDistribute class], [MSPush class]];
+  NSArray<Class> *services =
+      @ [[MSAnalytics class], [MSCrashes class], [MSData class], [MSDistribute class], [MSAuth class], [MSPush class]];
   NSInteger startTarget = [[NSUserDefaults standardUserDefaults] integerForKey:kMSStartTargetKey];
+#if GCC_PREPROCESSOR_MACRO_PUPPET
+  NSString *appSecret = [[NSUserDefaults standardUserDefaults] objectForKey:kMSAppSecret] ?: kMSPuppetAppSecret;
+#else
+  NSString *appSecret = [[NSUserDefaults standardUserDefaults] objectForKey:kMSAppSecret] ?: kMSObjcAppSecret;
+#endif
   switch (startTarget) {
   case APPCENTER:
-    [MSAppCenter start:[NSString stringWithUTF8String:APP_SECRET_VALUE] withServices:services];
+    [MSAppCenter start:appSecret withServices:services];
     break;
   case ONECOLLECTOR:
     [MSAppCenter start:[NSString stringWithFormat:@"target=%@", kMSObjCTargetToken] withServices:services];
     break;
   case BOTH:
-    [MSAppCenter start:[NSString stringWithFormat:@"appsecret=%s;target=%@", APP_SECRET_VALUE, kMSObjCTargetToken] withServices:services];
+    [MSAppCenter start:[NSString stringWithFormat:@"appsecret=%@;target=%@", appSecret, kMSObjCTargetToken] withServices:services];
     break;
   case NONE:
     [MSAppCenter startWithServices:services];
     break;
   }
+
+  // Setup location manager.
+  self.locationManager = [[CLLocationManager alloc] init];
+  self.locationManager.delegate = self;
+  self.locationManager.desiredAccuracy = kCLLocationAccuracyKilometer;
+  [self.locationManager requestWhenInUseAuthorization];
 
   // Set user id.
   NSString *userId = [[NSUserDefaults standardUserDefaults] objectForKey:kMSUserIdKey];
@@ -123,6 +154,12 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
   [self crashes];
   [self setAppCenterDelegate];
   return YES;
+}
+
+- (void)requestLocation {
+  if (CLLocationManager.locationServicesEnabled) {
+    [self.locationManager requestLocation];
+  }
 }
 
 #pragma mark - Application life cycle
@@ -219,6 +256,21 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
   [NSNotificationCenter.defaultCenter postNotificationName:kUpdateAnalyticsResultNotification object:self.analyticsResult];
 }
 #endif
+
+#pragma mark - MSRemoteOperationDelegate
+
+- (void)data:(MSData *)data
+    didCompletePendingOperation:(NSString *)operation
+                    forDocument:(MSDocumentWrapper *_Nullable)document
+                      withError:(MSDataError *_Nullable)error {
+  NSLog(@"Operation processed: %@ ", operation);
+  if (document) {
+    NSLog(@"Document: Partition : %@, document id : %@, eTag : %@ ", document.partition, document.documentId, document.eTag);
+  }
+  if (error) {
+    NSLog(@"Error: %@ ", error);
+  }
+}
 
 #pragma mark - MSCrashesDelegate
 
@@ -375,6 +427,30 @@ enum StartupMode { APPCENTER, ONECOLLECTOR, BOTH, NONE, SKIP };
     self.notificationPresentationCompletionHandler(UNNotificationPresentationOptionNone);
     self.notificationPresentationCompletionHandler = nil;
   }
+}
+
+#pragma mark - CLLocationManagerDelegate
+
+- (void)locationManager:(CLLocationManager *)manager didChangeAuthorizationStatus:(CLAuthorizationStatus)status {
+  if (status == kCLAuthorizationStatusAuthorizedWhenInUse) {
+    [manager requestLocation];
+  }
+}
+
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
+  CLLocation *location = [locations lastObject];
+  CLGeocoder *geocoder = [[CLGeocoder alloc] init];
+  [geocoder reverseGeocodeLocation:location
+                 completionHandler:^(NSArray *placemarks, NSError *error) {
+                   if (placemarks.count == 0 || error)
+                     return;
+                   CLPlacemark *placemark = [placemarks firstObject];
+                   [MSAppCenter setCountryCode:placemark.ISOcountryCode];
+                 }];
+}
+
+- (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error {
+  NSLog(@"Failed to find user's location: %@", error.localizedDescription);
 }
 
 @end

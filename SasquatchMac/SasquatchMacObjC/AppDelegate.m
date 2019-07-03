@@ -1,5 +1,8 @@
-#import "AppCenterDelegateObjC.h"
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "AppDelegate.h"
+#import "AppCenterDelegateObjC.h"
 #import "Constants.h"
 
 @import AppCenter;
@@ -10,13 +13,27 @@
 @interface AppDelegate ()
 
 @property NSWindowController *rootController;
+@property(nonatomic) CLLocationManager *locationManager;
 
 @end
+
+enum StartupMode { appCenter, oneCollector, both, none, skip };
 
 @implementation AppDelegate
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   [MSAppCenter setLogLevel:MSLogLevelVerbose];
+
+  // Setup location manager.
+  self.locationManager = [[CLLocationManager alloc] init];
+  self.locationManager.delegate = self;
+  self.locationManager.desiredAccuracy = kCLLocationAccuracyKilometer;
+
+  // Set custom log URL.
+  NSString *logUrl = [[NSUserDefaults standardUserDefaults] objectForKey:kMSLogUrl];
+  if (logUrl) {
+    [MSAppCenter setLogUrl:logUrl];
+  }
 
   // Set user id.
   NSString *userId = [[NSUserDefaults standardUserDefaults] objectForKey:@"userId"];
@@ -28,11 +45,60 @@
   [self setupCrashes];
   [self setupPush];
 
+  // Set max storage size.
+  NSNumber *storageMaxSize = [[NSUserDefaults standardUserDefaults] objectForKey:kMSStorageMaxSizeKey];
+  if (storageMaxSize) {
+    [MSAppCenter setMaxStorageSize:storageMaxSize.integerValue
+                 completionHandler:^(BOOL success) {
+                   dispatch_async(dispatch_get_main_queue(), ^{
+                     if (success) {
+                       long realStorageSize = (long)(ceil([storageMaxSize doubleValue] / kMSStoragePageSize) * kMSStoragePageSize);
+                       [[NSUserDefaults standardUserDefaults] setObject:[NSNumber numberWithLong:realStorageSize]
+                                                                 forKey:kMSStorageMaxSizeKey];
+                     } else {
+
+                       // Remove invalid value.
+                       [[NSUserDefaults standardUserDefaults] removeObjectForKey:kMSStorageMaxSizeKey];
+                     }
+                   });
+                 }];
+  }
+
   // Start AppCenter.
-  [MSAppCenter start:@"d80aae71-af34-4e0c-af61-2381391c4a7a" withServices:@[ [MSAnalytics class], [MSCrashes class], [MSPush class] ]];
+  NSArray<Class> *services = @ [[MSAnalytics class], [MSCrashes class], [MSPush class]];
+  NSInteger startTarget = [[NSUserDefaults standardUserDefaults] integerForKey:kMSStartTargetKey];
+  NSString *appSecret = [[NSUserDefaults standardUserDefaults] objectForKey:kMSAppSecret] ?: kMSObjcAppSecret;
+  switch (startTarget) {
+  case appCenter:
+    [MSAppCenter start:appSecret withServices:services];
+    break;
+  case oneCollector:
+    [MSAppCenter start:[NSString stringWithFormat:@"target=%@", kMSObjCTargetToken] withServices:services];
+    break;
+  case both:
+    [MSAppCenter start:[NSString stringWithFormat:@"appsecret=%@;target=%@", appSecret, kMSObjCTargetToken] withServices:services];
+    break;
+  case none:
+    [MSAppCenter startWithServices:services];
+    break;
+  }
+
   [AppCenterProvider shared].appCenter = [[AppCenterDelegateObjC alloc] init];
 
   [self initUI];
+  [self overrideCountryCode];
+}
+
+- (void)overrideCountryCode {
+    if ([CLLocationManager locationServicesEnabled]) {
+        [self.locationManager startUpdatingLocation];
+    } else {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Location service is disabled";
+        alert.informativeText = @"Please enable location service on your Mac.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }
 }
 
 #pragma mark - Private
@@ -59,7 +125,6 @@
 
   [MSCrashes setDelegate:self];
   [MSCrashes setUserConfirmationHandler:(^(NSArray<MSErrorReport *> *errorReports) {
-
                // Use MSAlertViewController to show a dialog to the user where they can choose if they want to provide a crash report.
                NSAlert *alert = [[NSAlert alloc] init];
                [alert setMessageText:@"Sorry about that!"];
@@ -132,8 +197,9 @@
           UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)[referenceUrl pathExtension], nil);
       NSString *MIMEType = (__bridge_transfer NSString *)UTTypeCopyPreferredTagWithClass(UTI, kUTTagClassMIMEType);
       CFRelease(UTI);
-      MSErrorAttachmentLog *binaryAttachment =
-          [MSErrorAttachmentLog attachmentWithBinary:data filename:referenceUrl.lastPathComponent contentType:MIMEType];
+      MSErrorAttachmentLog *binaryAttachment = [MSErrorAttachmentLog attachmentWithBinary:data
+                                                                                 filename:referenceUrl.lastPathComponent
+                                                                              contentType:MIMEType];
       [attachments addObject:binaryAttachment];
       NSLog(@"Add binary attachment with %tu bytes", [data length]);
     } else {
@@ -186,6 +252,25 @@
   [alert setInformativeText:message];
   [alert addButtonWithTitle:@"OK"];
   [alert runModal];
+}
+
+#pragma mark - CLLocationManagerDelegate
+
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
+  [self.locationManager stopUpdatingLocation];
+  CLLocation *location = [locations lastObject];
+  CLGeocoder *geocoder = [[CLGeocoder alloc] init];
+  [geocoder reverseGeocodeLocation:location
+                 completionHandler:^(NSArray *placemarks, NSError *error) {
+                   if (placemarks.count == 0 || error)
+                     return;
+                   CLPlacemark *placemark = [placemarks firstObject];
+                   [MSAppCenter setCountryCode:placemark.ISOcountryCode];
+                 }];
+}
+
+- (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error {
+  NSLog(@"Failed to find user's location: %@", error.localizedDescription);
 }
 
 @end

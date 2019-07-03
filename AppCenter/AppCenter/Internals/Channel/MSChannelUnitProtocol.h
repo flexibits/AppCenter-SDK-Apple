@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSChannelProtocol.h"
@@ -52,6 +55,11 @@ NS_ASSUME_NONNULL_BEGIN
  * @see pauseSendingLogsWithToken:
  */
 - (void)resumeSendingLogsWithToken:(NSString *)token;
+
+/**
+ * Check for enqueued logs to send to ingestion.
+ */
+- (void)checkPendingLogs;
 
 @end
 

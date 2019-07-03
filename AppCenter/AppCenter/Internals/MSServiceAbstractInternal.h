@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import "MSService.h"
 #import "MSServiceAbstract.h"
 #import "MSServiceCommon.h"
@@ -21,7 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Flag indicating if a service has been started or not.
  */
-@property(nonatomic) BOOL started;
+@property(nonatomic, getter=isStarted) BOOL started;
 
 #pragma mark - Service initialization
 

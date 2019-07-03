@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 #import "MSHttpIngestion.h"
@@ -28,7 +31,22 @@
  * A boolean value set to YES if the ingestion is enabled or NO otherwise.
  * Enable/disable does resume/pause the ingestion as needed under the hood.
  */
-@property(nonatomic) BOOL enabled;
+@property(nonatomic, getter=isEnabled) BOOL enabled;
+
+/**
+ * Initialize the Ingestion with default retry intervals.
+ *
+ * @param baseUrl Base url.
+ * @param apiPath Base API path.
+ * @param headers Http headers.
+ * @param queryStrings An array of query strings.
+ * @param reachability Network reachability helper.
+ */
+- (id)initWithBaseUrl:(NSString *)baseUrl
+              apiPath:(NSString *)apiPath
+              headers:(NSDictionary *)headers
+         queryStrings:(NSDictionary *)queryStrings
+         reachability:(MS_Reachability *)reachability;
 
 /**
  * Initialize the Ingestion.
@@ -65,15 +83,6 @@
               reachability:(MS_Reachability *)reachability
             retryIntervals:(NSArray *)retryIntervals
     maxNumberOfConnections:(NSInteger)maxNumberOfConnections;
-
-/**
- * Create a request based on data. Must override this method in sub classes.
- *
- * @param data A data instance that will be transformed to request body.
- *
- * @return A URL request.
- */
-- (NSURLRequest *)createRequest:(NSObject *)data;
 
 /**
  * Convert key/value pairs for headers to a string.

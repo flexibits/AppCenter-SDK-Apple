@@ -1,5 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <CommonCrypto/CommonDigest.h>
 
+#import "MSAppCenterInternal.h"
+#import "MSLogger.h"
 #import "MSUtility+StringFormatting.h"
 
 /*
@@ -108,6 +113,27 @@ static NSString *kMSAppSecretKey = @"appsecret=";
     }
   }
   return result;
+}
+
+- (NSString *)obfuscateString:(NSString *)unObfuscatedString
+          searchingForPattern:(NSString *)pattern
+        toReplaceWithTemplate:(NSString *)aTemplate {
+  NSString *obfuscatedString;
+  NSError *error = nil;
+  if (unObfuscatedString) {
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern
+                                                                           options:NSRegularExpressionCaseInsensitive
+                                                                             error:&error];
+    if (!regex) {
+      MSLogError([MSAppCenter logTag], @"Couldn't create regular expression with pattern\"%@\": %@", pattern, error.localizedDescription);
+      return nil;
+    }
+    obfuscatedString = [regex stringByReplacingMatchesInString:unObfuscatedString
+                                                       options:0
+                                                         range:NSMakeRange(0, [unObfuscatedString length])
+                                                  withTemplate:aTemplate];
+  }
+  return obfuscatedString;
 }
 
 @end

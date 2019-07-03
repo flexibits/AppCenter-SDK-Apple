@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -19,7 +22,7 @@ typedef NS_OPTIONS(NSUInteger, MSCompletionExecutor) {
 /**
  * Enable/Disable Application forwarding.
  */
-@property(nonatomic) BOOL enabled;
+@property(atomic, getter=isEnabled) BOOL enabled;
 
 /**
  * Hash table containing all the delegates as weak references.
