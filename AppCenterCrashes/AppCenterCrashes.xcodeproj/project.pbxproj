@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 52;
 	objects = {
 
 /* Begin PBXAggregateTarget section */
@@ -2378,6 +2378,7 @@
 		C24C9D152472B4810072C35D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = "CrashReporter iOS";
+			platformFilter = ios;
 			targetProxy = C24C9D142472B4810072C35D /* PBXContainerItemProxy */;
 		};
 		C24C9D1A2472B4870072C35D /* PBXTargetDependency */ = {
